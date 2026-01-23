@@ -31,6 +31,12 @@ mkdir -p BC64Keys.app/Contents/Resources
 # Move binary to app bundle
 mv BC64Keys_tmp BC64Keys.app/Contents/MacOS/BC64Keys
 
+# Copy app icon if available
+if [ -f "AppIcon.icns" ]; then
+    cp AppIcon.icns BC64Keys.app/Contents/Resources/
+    echo "✅ App icon added"
+fi
+
 # Create Info.plist
 cat > BC64Keys.app/Contents/Info.plist << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -51,6 +57,8 @@ cat > BC64Keys.app/Contents/Info.plist << 'EOF'
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
