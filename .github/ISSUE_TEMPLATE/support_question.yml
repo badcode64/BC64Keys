@@ -1,0 +1,16 @@
+name: Support question
+description: Ask a question about usage or setup
+title: "[Question]: "
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tip: while running, BC64Keys writes status logs to `~/Library/Logs/BC64Keys/bc64keys-status.log`.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true

@@ -1,0 +1,26 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# App build artifacts produced by ./build.sh (only in project root)
+/BC64Keys
+/BC64Keys_tmp
+/BC64Keys.app/
+/BC64Keys.dSYM/
+
+# Local logs
+/tmp/bc64keys-status.log
+
+# Editor / misc
+.vscode/
+*.swp
+
+# Local manual backups (these should not be committed)
+*.bak
+*.backup-*
+Sources.backup/

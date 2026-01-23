@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# BC64Keys Build Script - Clean build
+echo "🧹 Cleaning old builds..."
+rm -rf BC64Keys BC64Keys.app BC64Keys.dSYM 2>/dev/null
+
+echo "🔨 Building BC64Keys..."
+
+# Compile the Swift app to a temporary binary
+swiftc Sources/BC64Keys/Localization.swift \
+    Sources/BC64Keys/BC64KeysApp.swift \
+    -o BC64Keys_tmp \
+    -framework SwiftUI \
+    -framework AppKit \
+    -framework Carbon \
+    -parse-as-library \
+    -O
+
+if [ $? -ne 0 ]; then
+    echo "❌ Build failed!"
+    exit 1
+fi
+
+echo "✅ Compilation successful!"
+
+# Create app bundle structure
+echo "📦 Creating app bundle..."
+mkdir -p BC64Keys.app/Contents/MacOS
+mkdir -p BC64Keys.app/Contents/Resources
+
+# Move binary to app bundle
+mv BC64Keys_tmp BC64Keys.app/Contents/MacOS/BC64Keys
+
+# Create Info.plist
+cat > BC64Keys.app/Contents/Info.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>BC64Keys</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.bc64.BC64Keys</string>
+    <key>CFBundleName</key>
+    <string>BC64Keys</string>
+    <key>CFBundleDisplayName</key>
+    <string>BC64Keys</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# Create PkgInfo
+echo -n "APPL????" > BC64Keys.app/Contents/PkgInfo
+
+echo "✅ App bundle created!"
+
+# Code sign the app with a stable identifier
+echo "🔏 Signing app..."
+# Using a designated requirement to make the signature more stable
+codesign --force --deep --sign - --identifier "com.bc64.BC64Keys" BC64Keys.app
+
+if [ $? -eq 0 ]; then
+    echo "✅ App signed successfully!"
+    # Verify signature
+    codesign -dv BC64Keys.app 2>&1 | grep -E "Identifier|Signature"
+else
+    echo "⚠️  Code signing failed (continuing anyway)"
+fi
+
+echo ""
+echo "✅ BUILD COMPLETE!"
+echo "📱 App location: BC64Keys.app"
+echo "🚀 Run with: open BC64Keys.app"
+echo ""
+echo "⚠️  IMPORTANT: Grant Accessibility permissions!"
+echo "   System Settings > Privacy & Security > Accessibility"
+echo "   Add: BC64Keys (this app)"
