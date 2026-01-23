@@ -147,7 +147,7 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 
 If BC64Keys saved you time and frustration, consider buying me a coffee!
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/badcode64)
+[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/programoznitanulj)
 
 Your support helps me maintain and improve BC64Keys. Thank you! 🙏
 
