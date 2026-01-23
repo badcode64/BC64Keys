@@ -36,3 +36,29 @@ Sources.backup/
 *_key.pem
 Certificates/
 Keys/
+
+# Notarization credentials (CRITICAL - never commit)
+*.credentials
+*.password
+notarization-password.txt
+apple-credentials.txt
+.notarization-password
+.notarization-credentials.sh
+.apple-id
+*.keychain
+exportOptions.plist
+
+# Build artifacts with embedded credentials
+*.xcarchive
+*.pkg
+*.dmg
+*.zip.dSYM
+
+# Environment files
+.env
+.env.local
+secrets.sh
+
+# Notarization scripts (keep local only)
+notarize.sh
+NOTARIZATION_GUIDE.md
