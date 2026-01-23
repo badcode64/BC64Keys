@@ -62,3 +62,6 @@ secrets.sh
 # Notarization scripts (keep local only)
 notarize.sh
 NOTARIZATION_GUIDE.md
+
+# GitHub Copilot instructions (keep local only)
+.github/copilot-instructions.md
