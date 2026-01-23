@@ -748,6 +748,35 @@ struct SettingsView: View {
                     .background(Color(NSColor.controlBackgroundColor))
                     .cornerRadius(12)
                     
+                    // Support Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label(L10n.current.support, systemImage: "heart.fill")
+                            .font(.headline)
+                            .foregroundColor(.pink)
+                        
+                        Text(L10n.current.supportDescription)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Button(action: {
+                            if let url = URL(string: "https://buymeacoffee.com/badcode64") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "cup.and.saucer.fill")
+                                Text(L10n.current.supportButton)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.pink)
+                    }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(12)
+                    
                     // About Section
                     VStack(alignment: .leading, spacing: 12) {
                         Label(L10n.current.about, systemImage: "info.circle")

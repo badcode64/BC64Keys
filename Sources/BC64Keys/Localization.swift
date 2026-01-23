@@ -116,6 +116,9 @@ class L10n: ObservableObject {
     var launchAtLoginHint: String { isHungarian ? "Az alkalmazás automatikusan elindul a számítógép bekapcsolásakor." : "The app will start automatically when you turn on your computer." }
     var language: String { isHungarian ? "Nyelv" : "Language" }
     var languageHint: String { isHungarian ? "A nyelv azonnal változik." : "Language changes immediately." }
+    var support: String { isHungarian ? "Támogatás" : "Support" }
+    var supportDescription: String { isHungarian ? "Ha tetszik az app, támogass egy kávéval! ☕" : "If you like this app, buy me a coffee! ☕" }
+    var supportButton: String { isHungarian ? "Támogatom" : "Buy Me a Coffee" }
     var about: String { isHungarian ? "Névjegy" : "About" }
     var aboutDescription: String { isHungarian ? "Billentyűzet módosító alkalmazás Windows-ról Mac-re váltók számára." : "Keyboard remapping application for Windows to Mac switchers." }
     
