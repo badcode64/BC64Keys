@@ -94,7 +94,9 @@ BC64Keys needs Accessibility permission to remap keys:
 3. Add **BC64Keys** and enable it
 4. Restart BC64Keys if needed
 
-> ⚠️ This permission is required because keyboard remapping requires low-level access to keyboard events.
+### Why Accessibility?
+
+Keyboard remapping on macOS requires intercepting and modifying system-wide key events before they reach applications. This low-level access is protected by macOS's Accessibility permission system to prevent unauthorized keylogging or input manipulation. BC64Keys uses a `CGEventTap` to observe and transform keyboard events globally — this is the same mechanism used by system utilities like macOS's own keyboard shortcuts. Without this permission, the app cannot intercept keys and remapping won't work.
 
 ---
 
