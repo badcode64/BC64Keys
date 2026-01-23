@@ -81,6 +81,12 @@ class LaunchAtLoginManager: ObservableObject {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var keyRemapper: KeyRemapper?
     var statusCheckTimer: Timer?
+    var statusItem: NSStatusItem?
+    
+    // Debug logging is now optional - only enabled if user explicitly turns it on in Settings.
+    // This reduces SSD wear and avoids logging sensitive keystroke patterns by default.
+    @AppStorage("bc64keys.debugLogging") var debugLoggingEnabled: Bool = false
+    
     // Prefer a per-user log location instead of /tmp to reduce information exposure and
     // avoid symlink-related file clobbering risks.
     private lazy var logFileURL: URL = {
@@ -95,14 +101,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let mappingManager = KeyMappingManager()
 
     // Writes operational status to both stdout and a per-user log file under ~/Library/Logs.
-    // This avoids /tmp exposure and is a more standard location for macOS app logs.
+    // File logging is now OPTIONAL (controlled by debugLoggingEnabled toggle) to reduce SSD wear.
     
     func log(_ message: String) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         let logMessage = "[\(timestamp)] \(message)\n"
-        print(logMessage, terminator: "")
         
-        // Also write to file
+        // Always print to console for development/debugging
+        #if DEBUG
+        print(logMessage, terminator: "")
+        #endif
+        
+        // Only write to file if debug logging is explicitly enabled by user
+        guard debugLoggingEnabled else { return }
+        
         if let data = logMessage.data(using: .utf8) {
             let path = logFileURL.path
             if FileManager.default.fileExists(atPath: path) {
@@ -118,13 +130,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Clear old log
-        try? FileManager.default.removeItem(at: logFileURL)
+        // Clear old log (only if debug logging is enabled)
+        if debugLoggingEnabled {
+            try? FileManager.default.removeItem(at: logFileURL)
+        }
         
         log("==================================================")
         log("🚀 BC64Keys App Started!")
-        log("📝 Status log: \(logFileURL.path)")
+        if debugLoggingEnabled {
+            log("📝 Status log: \(logFileURL.path)")
+        }
         log("==================================================")
+        
+        // Setup menu bar icon (like Karabiner Elements)
+        setupMenuBar()
         
         // Start periodic status check (1 second interval).
         // Reason: Accessibility permission can be granted/revoked while the app is running.
@@ -136,11 +155,109 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         checkAndReportStatus()
     }
     
+    // MARK: - Menu Bar Icon (like Karabiner Elements)
+    // Creates a status bar icon that shows remapper state and allows quick access to the app window.
+    func setupMenuBar() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        
+        if let button = statusItem?.button {
+            // Create simple square icon with "B" letter
+            let icon = createMenuBarIcon()
+            icon.isTemplate = true  // Makes it white in menu bar
+            button.image = icon
+            button.action = #selector(statusItemClicked)
+            button.target = self
+        }
+        
+        updateMenuBarIcon()
+    }
+    
+    // Create custom menu bar icon - simple square with "B" letter
+    private func createMenuBarIcon() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        
+        image.lockFocus()
+        
+        // Draw rounded square background
+        let rect = NSRect(x: 2, y: 2, width: 14, height: 14)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2)
+        NSColor.white.setStroke()
+        path.lineWidth = 1.5
+        path.stroke()
+        
+        // Draw "B" letter in center
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: NSColor.white
+        ]
+        let letter = "B"
+        let letterSize = letter.size(withAttributes: attrs)
+        let letterRect = NSRect(
+            x: (size.width - letterSize.width) / 2,
+            y: (size.height - letterSize.height) / 2 - 1,
+            width: letterSize.width,
+            height: letterSize.height
+        )
+        letter.draw(in: letterRect, withAttributes: attrs)
+        
+        image.unlockFocus()
+        return image
+    }
+    
+    // Update menu bar icon based on remapper state (no color change needed with template)
+    func updateMenuBarIcon() {
+        // Template icons automatically match menu bar appearance (white/dark)
+        // Status is shown by the icon itself being present
+    }
+    
+    // When status item is clicked, bring the app window to foreground
+    // Simplified approach that works consistently with SwiftUI WindowGroup
+    @objc func statusItemClicked() {
+        // Activate app first
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Try to show ALL windows (brute force approach - most reliable)
+        var didShowWindow = false
+        for window in NSApp.windows {
+            // Handle minimized windows
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+                didShowWindow = true
+            }
+            
+            // Bring all non-panel windows to front
+            if !window.className.contains("Panel") && !window.className.contains("Alert") {
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+                didShowWindow = true
+            }
+        }
+        
+        // If no windows were shown, the user closed them all
+        // Force app to recreate main window by toggling activation policy
+        if !didShowWindow || NSApp.windows.isEmpty {
+            NSApp.unhide(nil)
+            NSApp.setActivationPolicy(.regular)
+            
+            // Give SwiftUI time to recreate the window
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                NSApp.activate(ignoringOtherApps: true)
+                // Show any new windows that appeared
+                for window in NSApp.windows {
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                }
+            }
+        }
+    }
+    
     func checkAndReportStatus() {
         let hasAccessibility = AXIsProcessTrusted()
         
-        // Update UI
+        // Update UI and menu bar icon
         statusManager.update(accessibility: hasAccessibility, remapperRunning: keyRemapper != nil)
+        updateMenuBarIcon()
         
         log("")
         log("⏰ STATUS CHECK:")
@@ -676,6 +793,7 @@ struct SettingsView: View {
     @ObservedObject var l10n = L10n.shared
     @StateObject private var launchManager = LaunchAtLoginManager()
     @AppStorage("selectedLanguage") private var selectedLanguageRaw: String = AppLanguage.system.rawValue
+    @AppStorage("bc64keys.debugLogging") private var debugLoggingEnabled: Bool = false
     
     private var selectedLanguage: AppLanguage {
         get { AppLanguage(rawValue: selectedLanguageRaw) ?? .system }
@@ -687,123 +805,101 @@ struct SettingsView: View {
             // Header
             HStack {
                 Text(L10n.current.settingsTitle)
-                    .font(.title)
+                    .font(.title2)
                     .fontWeight(.bold)
                 
                 Spacer()
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             .background(Color(NSColor.controlBackgroundColor))
             
             Divider()
             
-            // Settings Content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    // Launch at Login Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label(L10n.current.launchAtLogin, systemImage: "power")
-                            .font(.headline)
-                        
-                        Toggle(isOn: Binding(
-                            get: { launchManager.isEnabled },
-                            set: { _ in launchManager.toggle() }
-                        )) {
-                            Text(L10n.current.launchAtLoginDescription)
-                        }
-                        .toggleStyle(.switch)
-                        
-                        Text(L10n.current.launchAtLoginHint)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(12)
+            // Settings Content - Compact but readable
+            VStack(alignment: .leading, spacing: 16) {
+                // Launch at Login + Language - Single row
+                HStack(spacing: 20) {
+                    // Launch at Login
+                    Label(L10n.current.launchAtLogin, systemImage: "power")
+                        .font(.headline)
                     
-                    // Language Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label(L10n.current.language, systemImage: "globe")
-                            .font(.headline)
-                        
-                        Picker("", selection: Binding(
-                            get: { selectedLanguage },
-                            set: { newValue in
-                                selectedLanguageRaw = newValue.rawValue
-                                L10n.shared.setLanguage(newValue)
-                            }
-                        )) {
-                            ForEach(AppLanguage.allCases, id: \.self) { lang in
-                                Text(lang.displayName).tag(lang)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 400)
-                        
-                        Text(L10n.current.languageHint)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(12)
-                    
-                    // Support Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label(L10n.current.support, systemImage: "heart.fill")
-                            .font(.headline)
-                            .foregroundColor(.pink)
-                        
-                        Text(L10n.current.supportDescription)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Button(action: {
-                            if let url = URL(string: "https://buymeacoffee.com/badcode64") {
-                                NSWorkspace.shared.open(url)
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: "cup.and.saucer.fill")
-                                Text(L10n.current.supportButton)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.pink)
-                    }
-                    .padding()
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(12)
-                    
-                    // About Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label(L10n.current.about, systemImage: "info.circle")
-                            .font(.headline)
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("BC64Keys")
-                                    .fontWeight(.semibold)
-                                Spacer()
-                                Text("v1.0")
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Text(L10n.current.aboutDescription)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding()
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(12)
+                    Toggle("", isOn: Binding(
+                        get: { launchManager.isEnabled },
+                        set: { _ in launchManager.toggle() }
+                    ))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
                     
                     Spacer()
+                    
+                    // Language
+                    Label(L10n.current.language, systemImage: "globe")
+                        .font(.headline)
+                    
+                    Picker("", selection: Binding(
+                        get: { selectedLanguage },
+                        set: { newValue in
+                            selectedLanguageRaw = newValue.rawValue
+                            L10n.shared.setLanguage(newValue)
+                        }
+                    )) {
+                        ForEach(AppLanguage.allCases, id: \.self) { lang in
+                            Text(lang.displayName).tag(lang)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 150)
                 }
-                .padding()
+                .padding(12)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                
+                // Support Section - Centered, prominent, no extra text
+                VStack(spacing: 12) {
+                    Button(action: {
+                        if let url = URL(string: "https://buymeacoffee.com/badcode64") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "cup.and.saucer.fill")
+                            Text(L10n.current.supportButton)
+                        }
+                        .font(.body)
+                        .frame(maxWidth: 300)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.pink)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(12)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                
+                Spacer()
+                
+                // Debug Logging Section - At the bottom (rarely used)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(L10n.current.debugLogging, systemImage: "ladybug.fill")
+                        .font(.headline)
+                        .foregroundColor(.orange)
+                    
+                    Toggle(isOn: $debugLoggingEnabled) {
+                        Text(L10n.current.debugLoggingDescription)
+                    }
+                    .toggleStyle(.switch)
+                    
+                    Text(L10n.current.debugLoggingHint)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(12)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
             }
+            .padding(16)
         }
     }
 }
