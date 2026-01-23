@@ -24,3 +24,15 @@ DerivedData/
 *.bak
 *.backup-*
 Sources.backup/
+
+# Apple Developer Certificates & Keys (security - never commit these)
+*.p12
+*.key
+*.pem
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+*_key.pem
+Certificates/
+Keys/
