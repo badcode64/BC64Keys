@@ -111,6 +111,9 @@ class L10n: ObservableObject {
     
     // MARK: - Settings View
     var settingsTitle: String { isHungarian ? "Beállítások" : "Settings" }
+    var launchAtLogin: String { isHungarian ? "Indítás bejelentkezéskor" : "Launch at login" }
+    var launchAtLoginDescription: String { isHungarian ? "Automatikus indítás rendszerindításkor" : "Start automatically when you log in" }
+    var launchAtLoginHint: String { isHungarian ? "Az alkalmazás automatikusan elindul a számítógép bekapcsolásakor." : "The app will start automatically when you turn on your computer." }
     var language: String { isHungarian ? "Nyelv" : "Language" }
     var languageHint: String { isHungarian ? "A nyelv azonnal változik." : "Language changes immediately." }
     var about: String { isHungarian ? "Névjegy" : "About" }

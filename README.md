@@ -45,6 +45,7 @@ This is why BC64Keys is:
 - **🔄 Simple Key Swaps** — Remap any key to any other key
 - **🎯 Navigation Actions** — Map keys to macOS shortcuts (Home → Cmd+←, etc.)
 - **🚫 Key Blocking** — Disable annoying keys completely
+- **🚀 Launch at Login** — Optional auto-start when you log in (toggle in Settings)
 - **🌍 Multi-language** — English, Hungarian (easily extensible)
 - **⚡ Instant Apply** — Changes take effect immediately, no restart needed
 - **💾 Auto-save** — Your mappings persist between app restarts

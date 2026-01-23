@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Carbon
+import ServiceManagement
 
 // BC64Keys
 // -------
@@ -42,6 +43,36 @@ class StatusManager: ObservableObject {
             self.hasAccessibility = accessibility
             self.remapperRunning = remapperRunning
             self.lastCheck = Date()
+        }
+    }
+}
+
+// MARK: - Launch at Login Manager
+class LaunchAtLoginManager: ObservableObject {
+    @Published var isEnabled: Bool = false
+    
+    private let service = SMAppService.mainApp
+    
+    init() {
+        updateStatus()
+    }
+    
+    func updateStatus() {
+        isEnabled = (service.status == .enabled)
+    }
+    
+    func toggle() {
+        do {
+            if isEnabled {
+                try service.unregister()
+                print("✅ Launch at login disabled")
+            } else {
+                try service.register()
+                print("✅ Launch at login enabled")
+            }
+            updateStatus()
+        } catch {
+            print("❌ Failed to toggle launch at login: \(error.localizedDescription)")
         }
     }
 }
@@ -643,6 +674,7 @@ struct StatusBar: View {
 // MARK: - Settings View
 struct SettingsView: View {
     @ObservedObject var l10n = L10n.shared
+    @StateObject private var launchManager = LaunchAtLoginManager()
     @AppStorage("selectedLanguage") private var selectedLanguageRaw: String = AppLanguage.system.rawValue
     
     private var selectedLanguage: AppLanguage {
@@ -668,6 +700,27 @@ struct SettingsView: View {
             // Settings Content
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    // Launch at Login Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label(L10n.current.launchAtLogin, systemImage: "power")
+                            .font(.headline)
+                        
+                        Toggle(isOn: Binding(
+                            get: { launchManager.isEnabled },
+                            set: { _ in launchManager.toggle() }
+                        )) {
+                            Text(L10n.current.launchAtLoginDescription)
+                        }
+                        .toggleStyle(.switch)
+                        
+                        Text(L10n.current.launchAtLoginHint)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(12)
+                    
                     // Language Section
                     VStack(alignment: .leading, spacing: 12) {
                         Label(L10n.current.language, systemImage: "globe")
