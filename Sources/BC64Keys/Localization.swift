@@ -67,7 +67,13 @@ enum AppLanguage: String, CaseIterable, Codable {
     var effectiveLanguage: String {
         switch self {
         case .system:
-            let systemLang = Locale.current.language.languageCode?.identifier ?? "en"
+            // Compatible with macOS 11+
+            let systemLang: String
+            if #available(macOS 13, *) {
+                systemLang = Locale.current.language.languageCode?.identifier ?? "en"
+            } else {
+                systemLang = Locale.current.languageCode ?? "en"
+            }
             // Support all major macOS markets
             let supported = ["hu", "en", "de", "fr", "es", "it", "ja", "zh", "nl", "pt", "sv", "da", "fi", "pl", "cs", "sk", "ro", "el", "ko", "ar", "he", "tr"]
             return supported.contains(systemLang) ? systemLang : "en"

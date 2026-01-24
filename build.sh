@@ -6,18 +6,45 @@ rm -rf BC64Keys BC64Keys.app BC64Keys.dSYM 2>/dev/null
 
 echo "🔨 Building BC64Keys..."
 
-# Compile the Swift app to a temporary binary
+# Build for both ARM64 (Apple Silicon) and x86_64 (Intel)
+echo "  - Building for ARM64 (Apple Silicon)..."
 swiftc Sources/BC64Keys/Localization.swift \
     Sources/BC64Keys/BC64KeysApp.swift \
-    -o BC64Keys_tmp \
+    -o BC64Keys_arm64 \
     -framework SwiftUI \
     -framework AppKit \
     -framework Carbon \
     -parse-as-library \
+    -target arm64-apple-macos13.0 \
     -O
 
 if [ $? -ne 0 ]; then
-    echo "❌ Build failed!"
+    echo "❌ ARM64 build failed!"
+    exit 1
+fi
+
+echo "  - Building for x86_64 (Intel)..."
+swiftc Sources/BC64Keys/Localization.swift \
+    Sources/BC64Keys/BC64KeysApp.swift \
+    -o BC64Keys_x86_64 \
+    -framework SwiftUI \
+    -framework AppKit \
+    -framework Carbon \
+    -parse-as-library \
+    -target x86_64-apple-macos13.0 \
+    -O
+
+if [ $? -ne 0 ]; then
+    echo "❌ x86_64 build failed!"
+    exit 1
+fi
+
+echo "  - Creating Universal Binary..."
+lipo -create BC64Keys_arm64 BC64Keys_x86_64 -output BC64Keys_tmp
+rm BC64Keys_arm64 BC64Keys_x86_64
+
+if [ $? -ne 0 ]; then
+    echo "❌ Universal binary creation failed!"
     exit 1
 fi
 
@@ -54,9 +81,9 @@ cat > BC64Keys.app/Contents/Info.plist << 'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
