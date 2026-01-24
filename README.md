@@ -70,14 +70,14 @@ Coming from Windows? BC64Keys includes pre-configured actions for:
 ## Installation
 
 ### Option 1: Download Release (Recommended)
-1. Download the latest `.app` from [Releases](https://github.com/webgeneral/BC64Keys/releases)
+1. Download the latest `.app` from [Releases](https://github.com/badcode64/BC64Keys/releases)
 2. Move `BC64Keys.app` to your Applications folder
 3. Open it and grant Accessibility permission when prompted
 
 ### Option 2: Build from Source
 ```bash
 # Clone the repository
-git clone https://github.com/webgeneral/BC64Keys.git
+git clone https://github.com/badcode64/BC64Keys.git
 cd BC64Keys
 
 # Build and run
@@ -175,4 +175,4 @@ This means:
 
 ---
 
-**Made by [BadCode64](https://github.com/webgeneral)** | Hungary 🇭🇺
+**Made by [BadCode64](https://github.com/badcode64)** | Hungary 🇭🇺
