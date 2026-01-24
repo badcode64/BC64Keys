@@ -288,6 +288,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         log("🎬 startRemapping() CALLED")
         log("==================================================")
         keyRemapper = KeyRemapper(mappingManager: mappingManager)
+        keyRemapper?.debugLoggingEnabled = debugLoggingEnabled
         keyRemapper?.startRemapping()
         log("🔚 startRemapping() FINISHED")
         log("==================================================")
@@ -428,8 +429,13 @@ struct KeyMapping: Identifiable, Codable {
     var appName: String // Empty = minden app
     var isEnabled: Bool
     
+    // Per-app filtering
+    var appFilterMode: AppFilterMode
+    var filteredApps: [String] // Bundle IDs (pl. "com.apple.Safari")
+    
     init(id: UUID = UUID(), fromKey: String = "", fromKeyCode: UInt16 = 0, 
-         toKey: String = "", toKeyCode: UInt16 = 0, appName: String = "", isEnabled: Bool = true) {
+         toKey: String = "", toKeyCode: UInt16 = 0, appName: String = "", isEnabled: Bool = true,
+         appFilterMode: AppFilterMode = .all, filteredApps: [String] = []) {
         self.id = id
         self.fromKey = fromKey
         self.fromKeyCode = fromKeyCode
@@ -437,6 +443,8 @@ struct KeyMapping: Identifiable, Codable {
         self.toKeyCode = toKeyCode
         self.appName = appName
         self.isEnabled = isEnabled
+        self.appFilterMode = appFilterMode
+        self.filteredApps = filteredApps
     }
 }
 
@@ -444,6 +452,12 @@ struct KeyMapping: Identifiable, Codable {
 enum MappingType: String, Codable {
     case simpleKey // Billentyű csere (s -> o)
     case navigation // Vezérlő csere (Home -> Cmd+Left)
+}
+
+enum AppFilterMode: String, Codable {
+    case all        // Minden alkalmazásra érvényes
+    case exclude    // Minden alkalmazásra kivéve...
+    case include    // Csak az alábbi alkalmazásokra
 }
 
 struct NavigationAction: Identifiable, Codable, Hashable {
@@ -488,7 +502,7 @@ struct NavigationAction: Identifiable, Codable, Hashable {
 }
 
 struct KeyMappingRule: Identifiable, Codable {
-    let id: UUID
+    var id: UUID
     var type: MappingType
     var sourceKeyCode: UInt16
     var sourceKeyName: String
@@ -498,9 +512,14 @@ struct KeyMappingRule: Identifiable, Codable {
     var targetModifiers: CGEventFlags? // For navigation actions
     var isEnabled: Bool
     
+    // Per-app filtering
+    var appFilterMode: AppFilterMode
+    var filteredApps: [String] // Bundle IDs
+    
     init(id: UUID = UUID(), type: MappingType, sourceKeyCode: UInt16, sourceKeyName: String,
          sourceModifiers: CGEventFlags? = nil, targetKeyCode: UInt16, targetKeyName: String, 
-         targetModifiers: CGEventFlags? = nil, isEnabled: Bool = true) {
+         targetModifiers: CGEventFlags? = nil, isEnabled: Bool = true,
+         appFilterMode: AppFilterMode = .all, filteredApps: [String] = []) {
         self.id = id
         self.type = type
         self.sourceKeyCode = sourceKeyCode
@@ -510,10 +529,12 @@ struct KeyMappingRule: Identifiable, Codable {
         self.targetKeyName = targetKeyName
         self.targetModifiers = targetModifiers
         self.isEnabled = isEnabled
+        self.appFilterMode = appFilterMode
+        self.filteredApps = filteredApps
     }
     
     enum CodingKeys: String, CodingKey {
-        case id, type, sourceKeyCode, sourceKeyName, sourceModifiers, targetKeyCode, targetKeyName, targetModifiers, isEnabled
+        case id, type, sourceKeyCode, sourceKeyName, sourceModifiers, targetKeyCode, targetKeyName, targetModifiers, isEnabled, appFilterMode, filteredApps
     }
     
     init(from decoder: Decoder) throws {
@@ -535,6 +556,10 @@ struct KeyMappingRule: Identifiable, Codable {
             targetModifiers = nil
         }
         isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        
+        // Per-app filtering (with defaults for backward compatibility)
+        appFilterMode = try container.decodeIfPresent(AppFilterMode.self, forKey: .appFilterMode) ?? .all
+        filteredApps = try container.decodeIfPresent([String].self, forKey: .filteredApps) ?? []
     }
     
     func encode(to encoder: Encoder) throws {
@@ -548,6 +573,8 @@ struct KeyMappingRule: Identifiable, Codable {
         try container.encode(targetKeyName, forKey: .targetKeyName)
         try container.encodeIfPresent(targetModifiers?.rawValue, forKey: .targetModifiers)
         try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(appFilterMode, forKey: .appFilterMode)
+        try container.encode(filteredApps, forKey: .filteredApps)
     }
 }
 
@@ -628,6 +655,15 @@ class KeyMappingManager: ObservableObject {
         mappings.append(mapping)
     }
     
+    func updateMapping(_ oldMapping: KeyMappingRule, with newMapping: KeyMappingRule) {
+        if let index = mappings.firstIndex(where: { $0.id == oldMapping.id }) {
+            var updated = newMapping
+            updated.id = oldMapping.id  // Keep the same ID
+            updated.isEnabled = oldMapping.isEnabled  // Keep enabled state
+            mappings[index] = updated
+        }
+    }
+    
     func deleteMapping(_ mapping: KeyMappingRule) {
         mappings.removeAll { $0.id == mapping.id }
     }
@@ -658,17 +694,30 @@ class KeyMappingManager: ObservableObject {
 
 // MARK: - Running Apps Manager
 class RunningAppsManager: ObservableObject {
-    @Published var runningApps: [String] = []
+    struct RunningApp: Identifiable {
+        let id = UUID()
+        let name: String
+        let bundleID: String
+    }
+    
+    @Published var runningApps: [RunningApp] = []
     
     func fetchRunningApps() {
         let workspace = NSWorkspace.shared
         let apps = workspace.runningApplications
             .filter { $0.activationPolicy == .regular }
-            .compactMap { $0.localizedName }
-            .sorted()
+            .compactMap { app -> RunningApp? in
+                guard let name = app.localizedName,
+                      let bundleID = app.bundleIdentifier else { return nil }
+                return RunningApp(name: name, bundleID: bundleID)
+            }
+            .sorted { $0.name < $1.name }
+        
+        print("📱 Fetched \(apps.count) running apps")
         
         DispatchQueue.main.async {
             self.runningApps = apps
+            print("📱 Updated runningApps array with \(apps.count) apps")
         }
     }
 }
@@ -996,6 +1045,7 @@ struct MappingView: View {
     @ObservedObject var mappingManager: KeyMappingManager
     @StateObject private var appsManager = RunningAppsManager()
     @State private var showAddSheet = false
+    @State private var editingMapping: KeyMappingRule?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1038,7 +1088,7 @@ struct MappingView: View {
                 ScrollView {
                     VStack(spacing: 8) {
                         ForEach(mappingManager.mappings) { mapping in
-                            MappingRow(mapping: mapping, manager: mappingManager)
+                            MappingRow(mapping: mapping, manager: mappingManager, editingMapping: $editingMapping)
                         }
                     }
                     .padding()
@@ -1047,6 +1097,17 @@ struct MappingView: View {
         }
         .sheet(isPresented: $showAddSheet) {
             AddMappingSheet(manager: mappingManager, appsManager: appsManager, isPresented: $showAddSheet)
+        }
+        .sheet(item: $editingMapping) { mapping in
+            AddMappingSheet(
+                manager: mappingManager, 
+                appsManager: appsManager, 
+                isPresented: Binding(
+                    get: { editingMapping != nil },
+                    set: { if !$0 { editingMapping = nil } }
+                ),
+                editingMapping: mapping
+            )
         }
         .onAppear {
             appsManager.fetchRunningApps()
@@ -1058,6 +1119,7 @@ struct MappingView: View {
 struct MappingRow: View {
     let mapping: KeyMappingRule
     @ObservedObject var manager: KeyMappingManager
+    @Binding var editingMapping: KeyMappingRule?
     
     // Special keys lookup
     private let specialKeys: [UInt16: String] = [
@@ -1121,6 +1183,14 @@ struct MappingRow: View {
                 .font(.body)
                 .help(mapping.type == .simpleKey ? L10n.current.keySwap : L10n.current.controlAction)
             
+            // Edit button
+            Button(action: { editingMapping = mapping }) {
+                Image(systemName: "pencil.circle.fill")
+                    .foregroundColor(.blue.opacity(0.7))
+                    .font(.body)
+            }
+            .buttonStyle(.borderless)
+            
             // Delete button
             Button(action: { manager.deleteMapping(mapping) }) {
                 Image(systemName: "xmark.circle.fill")
@@ -1164,6 +1234,9 @@ struct AddMappingSheet: View {
     @ObservedObject var appsManager: RunningAppsManager
     @Binding var isPresented: Bool
     
+    // Optional: if editing an existing mapping
+    var editingMapping: KeyMappingRule?
+    
     @State private var mappingType: MappingType = .navigation
     @State private var fromKey = ""
     @State private var fromKeyCode: UInt16 = 0
@@ -1176,6 +1249,11 @@ struct AddMappingSheet: View {
     @State private var isCapturingTo = false
     @State private var toKeyCodeText = ""
     @State private var keyCaptureMonitor: Any?
+    @State private var isLoadingMapping = false
+    
+    // Per-app filtering
+    @State private var appFilterMode: AppFilterMode = .all
+    @State private var selectedAppBundleIDs: Set<String> = []
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1184,7 +1262,7 @@ struct AddMappingSheet: View {
                 Image(systemName: "keyboard.badge.ellipsis")
                     .font(.title2)
                     .foregroundColor(.accentColor)
-                Text(L10n.current.newKeyRule)
+                Text(editingMapping == nil ? L10n.current.newKeyRule : L10n.current.editKeyRule)
                     .font(.title2)
                     .fontWeight(.semibold)
             }
@@ -1196,7 +1274,7 @@ struct AddMappingSheet: View {
             VStack(spacing: 20) {
                 // Mapping Type Selection
                 VStack(alignment: .leading, spacing: 10) {
-                    Label(L10n.current.ruleType, systemImage: "switch.2")
+                    Text(L10n.current.ruleType)
                         .font(.headline)
                         .foregroundColor(.secondary)
                     
@@ -1207,11 +1285,7 @@ struct AddMappingSheet: View {
                             .tag(MappingType.navigation)
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: mappingType) { _ in
-                        toKey = ""
-                        toKeyCode = 0
-                        selectedNavigationAction = nil
-                    }
+                    .disabled(editingMapping != nil)  // Don't allow changing type when editing
                 }
                 
                 // Key Mapping Area
@@ -1234,23 +1308,25 @@ struct AddMappingSheet: View {
                             VStack(spacing: 6) {
                                 if fromKey.isEmpty {
                                     Image(systemName: "keyboard")
-                                        .font(.largeTitle)
+                                        .font(.title)
                                         .foregroundColor(.secondary)
                                     Text(isCapturingFrom ? L10n.current.pressKey : L10n.current.clickHere)
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 } else {
                                     Text(fromKey)
-                                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                                        .font(.system(size: 18, weight: .bold, design: .rounded))
                                         .foregroundColor(.primary)
                                 }
                             }
                             .padding()
                         }
-                        .frame(height: 100)
+                        .frame(height: 80)
                         .onTapGesture {
+                            print("🖱️ FROM box tapped")
                             isCapturingFrom = true
                             isCapturingTo = false
+                            print("🖱️ isCapturingFrom = true")
                         }
                         
                         if !fromKey.isEmpty {
@@ -1297,20 +1373,20 @@ struct AddMappingSheet: View {
                                 VStack(spacing: 6) {
                                     if toKey.isEmpty {
                                         Image(systemName: "keyboard")
-                                            .font(.largeTitle)
+                                            .font(.title)
                                             .foregroundColor(.secondary)
                                         Text(isCapturingTo ? L10n.current.pressKey : L10n.current.clickHere)
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                     } else {
                                         Text(toKey)
-                                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                                            .font(.system(size: 18, weight: .bold, design: .rounded))
                                             .foregroundColor(.primary)
                                     }
                                 }
                                 .padding()
                             }
-                            .frame(height: 100)
+                            .frame(height: 80)
                             .onTapGesture {
                                 isCapturingTo = true
                                 isCapturingFrom = false
@@ -1347,7 +1423,7 @@ struct AddMappingSheet: View {
                                             .multilineTextAlignment(.center)
                                     } else {
                                         Image(systemName: "list.bullet")
-                                            .font(.largeTitle)
+                                            .font(.title)
                                             .foregroundColor(.secondary)
                                         Text(L10n.current.selectAction)
                                             .font(.caption)
@@ -1356,7 +1432,7 @@ struct AddMappingSheet: View {
                                 }
                                 .padding()
                             }
-                            .frame(height: 100)
+                            .frame(height: 80)
                             
                             Picker("", selection: $selectedNavigationAction) {
                                 Text(L10n.current.select).tag(nil as NavigationAction?)
@@ -1369,6 +1445,89 @@ struct AddMappingSheet: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(NSColor.windowBackgroundColor))
+                .cornerRadius(12)
+                
+                // Per-App Filter Section
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L10n.current.appFilter)
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    
+                    // Filter Mode Selection
+                    Picker("", selection: $appFilterMode) {
+                        Label(L10n.current.filterAllApps, systemImage: "square.stack.3d.up").tag(AppFilterMode.all)
+                        Label(L10n.current.filterExclude, systemImage: "minus.circle").tag(AppFilterMode.exclude)
+                        Label(L10n.current.filterInclude, systemImage: "checkmark.circle").tag(AppFilterMode.include)
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    // Running Apps List (only if not .all)
+                    if appFilterMode != .all {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(L10n.current.runningApps)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text("(\(appsManager.runningApps.count))")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            if appsManager.runningApps.isEmpty {
+                                HStack {
+                                    Image(systemName: "info.circle")
+                                        .foregroundColor(.orange)
+                                    Text(L10n.current.appNotRunningHint)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(8)
+                            } else {
+                                ScrollView {
+                                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                                        ForEach(appsManager.runningApps) { app in
+                                            HStack(spacing: 4) {
+                                                Text(app.name)
+                                                    .font(.system(size: 10, weight: .medium))
+                                                    .lineLimit(1)
+                                                Spacer(minLength: 2)
+                                                Toggle("", isOn: Binding(
+                                                    get: { selectedAppBundleIDs.contains(app.bundleID) },
+                                                    set: { isOn in
+                                                        if isOn {
+                                                            selectedAppBundleIDs.insert(app.bundleID)
+                                                        } else {
+                                                            selectedAppBundleIDs.remove(app.bundleID)
+                                                        }
+                                                    }
+                                                ))
+                                                .toggleStyle(.switch)
+                                                .scaleEffect(0.7)
+                                            }
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.blue.opacity(0.05))
+                                            .cornerRadius(5)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 5)
+                                                    .stroke(Color.gray.opacity(0.15), lineWidth: 0.5)
+                                            )
+                                            .help(app.bundleID)
+                                        }
+                                    }
+                                    .padding(8)
+                                }
+                                .frame(maxHeight: 420)
+                                .background(Color(NSColor.windowBackgroundColor))
+                                .cornerRadius(8)
+                            }
+                        }
+                    }
                 }
                 .padding()
                 .background(Color(NSColor.windowBackgroundColor))
@@ -1399,9 +1558,32 @@ struct AddMappingSheet: View {
             }
             .padding(20)
         }
-        .frame(width: 550, height: 480)
+        .frame(width: 900, height: 650)
         .onAppear {
             startKeyCapture()
+            appsManager.fetchRunningApps()
+            
+            // Populate fields if editing
+            if let mapping = editingMapping {
+                isLoadingMapping = true
+                
+                fromKey = mapping.sourceKeyName
+                fromKeyCode = mapping.sourceKeyCode
+                fromModifiers = mapping.sourceModifiers
+                toKey = mapping.targetKeyName
+                toKeyCode = mapping.targetKeyCode
+                mappingType = mapping.type
+                appFilterMode = mapping.appFilterMode
+                selectedAppBundleIDs = Set(mapping.filteredApps)
+                
+                if mapping.type == .navigation {
+                    selectedNavigationAction = KeyMappingManager.navigationActions.first { 
+                        $0.key == mapping.targetKeyCode 
+                    }
+                }
+                
+                isLoadingMapping = false
+            }
         }
         .onDisappear {
             stopKeyCapture()
@@ -1409,6 +1591,12 @@ struct AddMappingSheet: View {
     }
     
     private var canSave: Bool {
+        // If editing, always allow save (just changing app filter for example)
+        if editingMapping != nil {
+            return !fromKey.isEmpty
+        }
+        
+        // For new mappings, require both keys
         guard !fromKey.isEmpty else { return false }
         if mappingType == .simpleKey {
             return !toKey.isEmpty
@@ -1418,6 +1606,8 @@ struct AddMappingSheet: View {
     }
     
     private func saveMapping() {
+        print("💾 Saving mapping: appFilterMode=\(appFilterMode), filteredApps=\(Array(selectedAppBundleIDs))")
+        
         if mappingType == .simpleKey {
             let mapping = KeyMappingRule(
                 type: .simpleKey,
@@ -1425,9 +1615,15 @@ struct AddMappingSheet: View {
                 sourceKeyName: fromKey,
                 sourceModifiers: fromModifiers,
                 targetKeyCode: toKeyCode,
-                targetKeyName: toKey
+                targetKeyName: toKey,
+                appFilterMode: appFilterMode,
+                filteredApps: Array(selectedAppBundleIDs)
             )
-            manager.addMapping(mapping)
+            if let editingMapping = editingMapping {
+                manager.updateMapping(editingMapping, with: mapping)
+            } else {
+                manager.addMapping(mapping)
+            }
         } else if let action = selectedNavigationAction {
             let mapping = KeyMappingRule(
                 type: .navigation,
@@ -1436,9 +1632,15 @@ struct AddMappingSheet: View {
                 sourceModifiers: fromModifiers,
                 targetKeyCode: action.key,
                 targetKeyName: action.name,
-                targetModifiers: action.modifiers
+                targetModifiers: action.modifiers,
+                appFilterMode: appFilterMode,
+                filteredApps: Array(selectedAppBundleIDs)
             )
-            manager.addMapping(mapping)
+            if let editingMapping = editingMapping {
+                manager.updateMapping(editingMapping, with: mapping)
+            } else {
+                manager.addMapping(mapping)
+            }
         }
         isPresented = false
     }
@@ -1452,6 +1654,7 @@ struct AddMappingSheet: View {
         }
 
         keyCaptureMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            print("🎹 Key event: keyCode=\(event.keyCode), from=\(self.isCapturingFrom), to=\(self.isCapturingTo)")
             if self.isCapturingFrom {
                 let baseKey = self.getKeyName(keyCode: event.keyCode, char: event.charactersIgnoringModifiers ?? "")
                 let mods = self.getModifierString(event.modifierFlags)
@@ -1459,19 +1662,13 @@ struct AddMappingSheet: View {
                 self.fromKeyCode = event.keyCode
                 self.fromModifiers = self.getCGEventFlags(event.modifierFlags)
                 self.isCapturingFrom = false
-                if let monitor = self.keyCaptureMonitor {
-                    NSEvent.removeMonitor(monitor)
-                    self.keyCaptureMonitor = nil
-                }
+                print("🎹 Captured FROM: \(self.fromKey)")
                 return nil
             } else if self.isCapturingTo {
                 self.toKey = self.getKeyName(keyCode: event.keyCode, char: event.charactersIgnoringModifiers ?? "")
                 self.toKeyCode = event.keyCode
                 self.isCapturingTo = false
-                if let monitor = self.keyCaptureMonitor {
-                    NSEvent.removeMonitor(monitor)
-                    self.keyCaptureMonitor = nil
-                }
+                print("🎹 Captured TO: \(self.toKey)")
                 return nil
             }
             return event
@@ -1568,6 +1765,7 @@ class KeyRemapper {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     weak var mappingManager: KeyMappingManager?
+    var debugLoggingEnabled: Bool = false
     
     init(mappingManager: KeyMappingManager) {
         self.mappingManager = mappingManager
@@ -1676,13 +1874,42 @@ class KeyRemapper {
             return Unmanaged.passRetained(event)
         }
         
+        // Get active app bundle ID for per-app filtering
+        let activeApp = NSWorkspace.shared.frontmostApplication
+        let activeBundleID = activeApp?.bundleIdentifier ?? ""
+        
+        // Debug: log active app info
+        if debugLoggingEnabled && !activeBundleID.isEmpty {
+            print("🎯 Active app: \(activeApp?.localizedName ?? "unknown") [\(activeBundleID)]")
+        }
+        
         // Matching strategy:
         // - Key code must match.
+        // - Per-app filter must allow the mapping.
         // - If the rule specifies sourceModifiers: require an exact match for the user-controlled modifiers.
         // - If the rule has no sourceModifiers: reject events where the user is holding any modifiers.
         // This keeps rules unambiguous (e.g., a plain Home rule won't also trigger on Shift+Home).
         for mapping in mappings {
             if keyCode == mapping.sourceKeyCode {
+                // Check per-app filter
+                let shouldApply: Bool
+                switch mapping.appFilterMode {
+                case .all:
+                    shouldApply = true
+                case .exclude:
+                    shouldApply = !mapping.filteredApps.contains(activeBundleID)
+                case .include:
+                    shouldApply = mapping.filteredApps.contains(activeBundleID)
+                }
+                
+                if debugLoggingEnabled {
+                    print("🔍 Filter: mode=\(mapping.appFilterMode), shouldApply=\(shouldApply), activeBundleID=\(activeBundleID), filtered=\(mapping.filteredApps)")
+                }
+                
+                if !shouldApply {
+                    continue // Skip this mapping for current app
+                }
+                
                 // Check if source modifiers match (if specified)
                 if let requiredMods = mapping.sourceModifiers {
                     // Only check user-controlled modifier keys

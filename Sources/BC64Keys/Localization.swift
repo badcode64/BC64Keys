@@ -258,6 +258,14 @@ class L10n: ObservableObject {
         tr(["en": "New Key Mapping Rule", "hu": "Új Billentyű Szabály", "de": "Neue Tastenzuordnungsregel", "fr": "Nouvelle règle de mappage",
             "es": "Nueva regla de mapeo", "it": "Nuova regola di mappatura", "ja": "新しいキーマッピングルール", "zh": "新建键映射规则"])
     }
+    var editKeyRule: String {
+        tr(["en": "Edit Key Mapping Rule", "hu": "Billentyű Szabály Szerkesztése", "de": "Tastenzuordnungsregel bearbeiten", "fr": "Modifier la règle de mappage",
+            "es": "Editar regla de mapeo", "it": "Modifica regola di mappatura", "ja": "キーマッピングルールを編集", "zh": "编辑键映射规则",
+            "nl": "Sleutelmappingsregel bewerken", "pt": "Editar regra de mapeamento", "sv": "Redigera tangentmappningsregel", "da": "Rediger tastemappingsregel",
+            "fi": "Muokkaa näppäinvastaavuussääntöä", "pl": "Edytuj regułę mapowania klawiszy", "cs": "Upravit pravidlo mapování kláves", "sk": "Upraviť pravidlo mapovania klávesov",
+            "ro": "Editare regulă de mapare taste", "el": "Επεξεργασία κανόνα αντιστοίχισης πλήκτρων", "ko": "키 매핑 규칙 편집", "ar": "تحرير قاعدة تعيين المفاتيح",
+            "he": "ערוך כלל מיפוי מקשים", "tr": "Tuş eşleme kuralını düzenle"])
+    }
     var ruleType: String {
         tr(["en": "Rule type", "hu": "Szabály típusa", "de": "Regeltyp", "fr": "Type de règle",
             "es": "Tipo de regla", "it": "Tipo di regola", "ja": "ルールタイプ", "zh": "规则类型"])
@@ -366,4 +374,49 @@ class L10n: ObservableObject {
             "nl": "Systeem", "pt": "Sistema", "sv": "System", "pl": "System",
             "ko": "시스템", "ar": "النظام", "tr": "Sistem"])
     }
+    
+    // MARK: - Per-App Filtering
+    var appFilter: String {
+        tr(["en": "Application Filter", "hu": "Alkalmazásszűrő", "de": "Anwendungsfilter", "fr": "Filtre d'application",
+            "es": "Filtro de aplicación", "it": "Filtro applicazioni", "ja": "アプリケーションフィルタ", "zh": "应用程序过滤器",
+            "nl": "Applicatiefilter", "pt": "Filtro de aplicativo", "sv": "Programfilter", "da": "Programfilter",
+            "fi": "Sovellussuodatin", "pl": "Filtr aplikacji", "cs": "Filtr aplikací", "sk": "Filter aplikácií",
+            "ro": "Filtru aplicații", "el": "Φίλτρο εφαρμογών", "ko": "응용 프로그램 필터", "ar": "مرشح التطبيقات", "he": "סינון יישומים", "tr": "Uygulama Filtresi"])
+    }
+    var filterAllApps: String {
+        tr(["en": "All applications", "hu": "Minden alkalmazás", "de": "Alle Anwendungen", "fr": "Toutes les applications",
+            "es": "Todas las aplicaciones", "it": "Tutte le applicazioni", "ja": "すべてのアプリケーション", "zh": "所有应用程序",
+            "nl": "Alle applicaties", "pt": "Todos os aplicativos", "sv": "Alla program", "da": "Alle programmer",
+            "fi": "Kaikki sovellukset", "pl": "Wszystkie aplikacje", "cs": "Všechny aplikace", "sk": "Všetky aplikácie",
+            "ro": "Toate aplicațiile", "el": "Όλες οι εφαρμογές", "ko": "모든 응용 프로그램", "ar": "جميع التطبيقات", "he": "כל היישומים", "tr": "Tüm uygulamalar"])
+    }
+    var filterExclude: String {
+        tr(["en": "All except selected", "hu": "Minden, kivéve a kiválasztottak", "de": "Alle außer ausgewählte", "fr": "Tous sauf sélectionnés",
+            "es": "Todos excepto seleccionados", "it": "Tutti tranne selezionati", "ja": "選択されたもの以外", "zh": "除选定项外的所有项",
+            "nl": "Alle behalve geselecteerd", "pt": "Todos exceto selecionados", "sv": "Alla utom valda", "da": "Alle undtagen valgte",
+            "fi": "Kaikki paitsi valitut", "pl": "Wszystkie z wyjątkiem wybranych", "cs": "Všechny kromě vybraných", "sk": "Všetky okrem vybraných",
+            "ro": "Toate cu excepția celor selectate", "el": "Όλα εκτός από τα επιλεγμένα", "ko": "선택한 항목을 제외한 모든 항목", "ar": "الكل ما عدا المحدد", "he": "הכל מלבד הנבחרים", "tr": "Seçilenler hariç tümü"])
+    }
+    var filterInclude: String {
+        tr(["en": "Only selected applications", "hu": "Csak a kiválasztott alkalmazások", "de": "Nur ausgewählte Anwendungen", "fr": "Seulement les applications sélectionnées",
+            "es": "Solo aplicaciones seleccionadas", "it": "Solo applicazioni selezionate", "ja": "選択されたアプリケーションのみ", "zh": "仅选定的应用程序",
+            "nl": "Alleen geselecteerde applicaties", "pt": "Somente aplicativos selecionados", "sv": "Endast valda program", "da": "Kun valgte programmer",
+            "fi": "Vain valitut sovellukset", "pl": "Tylko wybrane aplikacje", "cs": "Pouze vybrané aplikace", "sk": "Iba vybraté aplikácie",
+            "ro": "Doar aplicațiile selectate", "el": "Μόνο επιλεγμένες εφαρμογές", "ko": "선택한 응용 프로그램만", "ar": "التطبيقات المحددة فقط", "he": "רק יישומים נבחרים", "tr": "Yalnızca seçilen uygulamalar"])
+    }
+    var runningApps: String {
+        tr(["en": "Running Applications", "hu": "Futó alkalmazások", "de": "Laufende Anwendungen", "fr": "Applications en cours d'exécution",
+            "es": "Aplicaciones en ejecución", "it": "Applicazioni in esecuzione", "ja": "実行中のアプリケーション", "zh": "正在运行的应用程序",
+            "nl": "Actieve applicaties", "pt": "Aplicativos em execução", "sv": "Körande program", "da": "Kørende programmer",
+            "fi": "Käynnissä olevat sovellukset", "pl": "Uruchomione aplikacje", "cs": "Spuštěné aplikace", "sk": "Spustené aplikácie",
+            "ro": "Aplicații în execuție", "el": "Εφαρμογές σε εκτέλεση", "ko": "실행 중인 응용 프로그램", "ar": "التطبيقات قيد التشغيل", "he": "יישומים פועלים", "tr": "Çalışan uygulamalar"])
+    }
+    var appNotRunningHint: String {
+        tr(["en": "Open the application to add it to the list", "hu": "Nyisd meg az alkalmazást, hogy hozzáadhasd a listához", "de": "Öffnen Sie die Anwendung, um sie zur Liste hinzuzufügen", "fr": "Ouvrez l'application pour l'ajouter à la liste",
+            "es": "Abra la aplicación para agregarla a la lista", "it": "Apri l'applicazione per aggiungerla all'elenco", "ja": "リストに追加するにはアプリケーションを開いてください", "zh": "打开应用程序以将其添加到列表",
+            "nl": "Open de applicatie om deze aan de lijst toe te voegen", "pt": "Abra o aplicativo para adicioná-lo à lista", "sv": "Öppna programmet för att lägga till det i listan", "da": "Åbn programmet for at tilføje det til listen",
+            "fi": "Avaa sovellus lisätäksesi sen luetteloon", "pl": "Otwórz aplikację, aby dodać ją do listy", "cs": "Otevřete aplikaci a přidejte ji do seznamu", "sk": "Otvorte aplikáciu, aby ste ju pridali do zoznamu",
+            "ro": "Deschideți aplicația pentru a o adăuga la listă", "el": "Ανοίξτε την εφαρμογή για να την προσθέσετε στη λίστα", "ko": "목록에 추가하려면 응용 프로그램을 여세요", "ar": "افتح التطبيق لإضافته إلى القائمة", "he": "פתח את היישום כדי להוסיף אותו לרשימה", "tr": "Listeye eklemek için uygulamayı açın"])
+    }
 }
+
