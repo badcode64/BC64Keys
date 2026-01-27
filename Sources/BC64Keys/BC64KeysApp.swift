@@ -19,6 +19,21 @@ import ServiceManagement
 // - This app needs Accessibility permission to observe/modify keystrokes globally.
 // - Keep logging conservative; anything written to stdout or /tmp can be readable by other local processes.
 
+// MARK: - Constants
+/// Shared key code to name mapping used throughout the app
+let kSpecialKeys: [UInt16: String] = [
+    36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Esc",
+    115: "Home", 119: "End", 116: "PgUp", 121: "PgDn", 117: "Del→",
+    123: "←", 124: "→", 125: "↓", 126: "↑",
+    122: "F1", 120: "F2", 99: "F3", 118: "F4",
+    96: "F5", 97: "F6", 98: "F7", 100: "F8",
+    101: "F9", 109: "F10", 103: "F11", 111: "F12",
+    // Modifier keys
+    57: "⇪ CapsLock", 56: "⇧ LShift", 60: "⇧ RShift",
+    59: "⌃ LCtrl", 62: "⌃ RCtrl", 58: "⌥ LOpt", 61: "⌥ ROpt",
+    55: "⌘ LCmd", 54: "⌘ RCmd", 63: "fn"
+]
+
 // MARK: - Main App
 @main
 struct BC64KeysApp: App {
@@ -78,7 +93,7 @@ class LaunchAtLoginManager: ObservableObject {
 }
 
 // MARK: - App Delegate for Accessibility Permissions
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var keyRemapper: KeyRemapper?
     var statusCheckTimer: Timer?
     var statusItem: NSStatusItem?
@@ -145,6 +160,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup menu bar icon (like Karabiner Elements)
         setupMenuBar()
         
+        // Ensure the main window is visible and active on startup
+        // This fixes the issue where the window doesn't show automatically
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.ensureMainWindowVisible()
+            self.setupWindowDelegates()
+        }
+        
         // Start periodic status check (1 second interval).
         // Reason: Accessibility permission can be granted/revoked while the app is running.
         statusCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -168,8 +190,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(statusItemClicked)
             button.target = self
         }
-        
-        updateMenuBarIcon()
     }
     
     // Create custom menu bar icon - simple square with "B" letter
@@ -205,59 +225,79 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return image
     }
     
-    // Update menu bar icon based on remapper state (no color change needed with template)
-    func updateMenuBarIcon() {
-        // Template icons automatically match menu bar appearance (white/dark)
-        // Status is shown by the icon itself being present
+    // Menu bar icon uses template mode - automatically adapts to light/dark appearance
+    
+    // When status item is clicked, toggle window visibility
+    @objc func statusItemClicked() {
+        let mainWindows = NSApp.windows.filter { window in
+            !window.className.contains("Panel") && 
+            !window.className.contains("Alert") &&
+            !window.className.contains("Tooltip")
+        }
+        
+        if let mainWindow = mainWindows.first {
+            // Window exists - just toggle visibility
+            if mainWindow.isVisible && NSApp.isActive {
+                // Hide the window and app
+                mainWindow.orderOut(nil)
+                NSApp.hide(nil)
+            } else {
+                // Show the window
+                NSApp.activate(ignoringOtherApps: true)
+                mainWindow.makeKeyAndOrderFront(nil)
+            }
+        }
     }
     
-    // When status item is clicked, bring the app window to foreground
-    // Simplified approach that works consistently with SwiftUI WindowGroup
-    @objc func statusItemClicked() {
-        // Activate app first
-        NSApp.activate(ignoringOtherApps: true)
-        
-        // Try to show ALL windows (brute force approach - most reliable)
-        var didShowWindow = false
+    // Setup window delegates to intercept close button
+    private func setupWindowDelegates() {
         for window in NSApp.windows {
-            // Handle minimized windows
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-                didShowWindow = true
+            if !window.className.contains("Panel") && 
+               !window.className.contains("Alert") &&
+               !window.className.contains("Tooltip") {
+                window.delegate = self
             }
-            
-            // Bring all non-panel windows to front
-            if !window.className.contains("Panel") && !window.className.contains("Alert") {
+        }
+    }
+    
+    // Intercept window close - just hide instead of destroying
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        sender.orderOut(nil)
+        NSApp.hide(nil)
+        return false  // Don't actually close/destroy the window
+    }
+    
+    // Helper method to ensure the main window is visible and active
+    private func ensureMainWindowVisible() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.unhide(nil)
+        
+        // Bring existing windows to front
+        for window in NSApp.windows {
+            if !window.className.contains("Panel") && 
+               !window.className.contains("Alert") &&
+               !window.className.contains("Tooltip") {
+                // Deminiaturize if minimized
+                if window.isMiniaturized {
+                    window.deminiaturize(nil)
+                }
                 window.makeKeyAndOrderFront(nil)
                 window.orderFrontRegardless()
-                didShowWindow = true
             }
         }
-        
-        // If no windows were shown, the user closed them all
-        // Force app to recreate main window by toggling activation policy
-        if !didShowWindow || NSApp.windows.isEmpty {
-            NSApp.unhide(nil)
-            NSApp.setActivationPolicy(.regular)
-            
-            // Give SwiftUI time to recreate the window
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                NSApp.activate(ignoringOtherApps: true)
-                // Show any new windows that appeared
-                for window in NSApp.windows {
-                    window.makeKeyAndOrderFront(nil)
-                    window.orderFrontRegardless()
-                }
-            }
-        }
+    }
+    
+    // Keep app running when window is hidden
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
     }
     
     func checkAndReportStatus() {
         let hasAccessibility = AXIsProcessTrusted()
         
-        // Update UI and menu bar icon
+        // Update UI
         statusManager.update(accessibility: hasAccessibility, remapperRunning: keyRemapper != nil)
-        updateMenuBarIcon()
         
         log("")
         log("⏰ STATUS CHECK:")
@@ -323,15 +363,15 @@ class KeyEventMonitor: ObservableObject {
             return
         }
 
-        // Monitor keyDown/keyUp events:
+        // Monitor keyDown/keyUp events AND flagsChanged (for modifier keys and Caps Lock):
         // - Global monitor: receives events system-wide (does not let us modify them).
         // - Local monitor: receives events inside our app (useful for the UI and capture workflows).
-        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             self?.handleKeyEvent(event)
         }
         
         // Also monitor local events (within our app)
-        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             self?.handleKeyEvent(event)
             return event
         }
@@ -351,9 +391,20 @@ class KeyEventMonitor: ObservableObject {
     private func handleKeyEvent(_ event: NSEvent) {
         let keyChar = event.charactersIgnoringModifiers ?? ""
         let modifiers = getModifierString(event.modifierFlags)
-        let eventType = event.type == .keyDown ? "↓ DOWN" : "↑ UP"
         
-        let keyName = getKeyName(keyCode: event.keyCode, char: keyChar)
+        // Determine event type
+        let eventType: String
+        if event.type == .keyDown {
+            eventType = "↓ DOWN"
+        } else if event.type == .keyUp {
+            eventType = "↑ UP"
+        } else if event.type == .flagsChanged {
+            eventType = "⚑ FLAG"
+        } else {
+            eventType = "?"
+        }
+        
+        let keyName = getKeyName(keyCode: event.keyCode, char: keyChar, flags: event.modifierFlags)
         
         let keyEvent = KeyEvent(
             timestamp: Date(),
@@ -373,6 +424,7 @@ class KeyEventMonitor: ObservableObject {
     
     private func getModifierString(_ flags: NSEvent.ModifierFlags) -> String {
         var mods: [String] = []
+        if flags.contains(.capsLock) { mods.append("⇪") }
         if flags.contains(.command) { mods.append("⌘") }
         if flags.contains(.option) { mods.append("⌥") }
         if flags.contains(.control) { mods.append("⌃") }
@@ -381,32 +433,8 @@ class KeyEventMonitor: ObservableObject {
         return mods.isEmpty ? "" : mods.joined(separator: " ")
     }
     
-    private func getKeyName(keyCode: UInt16, char: String) -> String {
-        // Special keys mapping
-        let specialKeys: [UInt16: String] = [
-            36: "Return",
-            48: "Tab",
-            49: "Space",
-            51: "Delete",
-            53: "Escape",
-            115: "Home",
-            119: "End",
-            116: "PageUp",
-            121: "PageDown",
-            117: "Forward Delete",
-            123: "←",
-            124: "→",
-            125: "↓",
-            126: "↑",
-            122: "F1", 120: "F2", 99: "F3", 118: "F4",
-            96: "F5", 97: "F6", 98: "F7", 100: "F8",
-            101: "F9", 109: "F10", 103: "F11", 111: "F12"
-        ]
-        
-        if let specialName = specialKeys[keyCode] {
-            return specialName
-        }
-        
+    private func getKeyName(keyCode: UInt16, char: String, flags: NSEvent.ModifierFlags) -> String {
+        if let name = kSpecialKeys[keyCode] { return name }
         return char.isEmpty ? "Key(\(keyCode))" : char.uppercased()
     }
     
@@ -419,45 +447,16 @@ class KeyEventMonitor: ObservableObject {
     }
 }
 
-// MARK: - Key Mapping Model
-struct KeyMapping: Identifiable, Codable {
-    let id: UUID
-    var fromKey: String
-    var fromKeyCode: UInt16
-    var toKey: String
-    var toKeyCode: UInt16
-    var appName: String // Empty = minden app
-    var isEnabled: Bool
-    
-    // Per-app filtering
-    var appFilterMode: AppFilterMode
-    var filteredApps: [String] // Bundle IDs (pl. "com.apple.Safari")
-    
-    init(id: UUID = UUID(), fromKey: String = "", fromKeyCode: UInt16 = 0, 
-         toKey: String = "", toKeyCode: UInt16 = 0, appName: String = "", isEnabled: Bool = true,
-         appFilterMode: AppFilterMode = .all, filteredApps: [String] = []) {
-        self.id = id
-        self.fromKey = fromKey
-        self.fromKeyCode = fromKeyCode
-        self.toKey = toKey
-        self.toKeyCode = toKeyCode
-        self.appName = appName
-        self.isEnabled = isEnabled
-        self.appFilterMode = appFilterMode
-        self.filteredApps = filteredApps
-    }
-}
-
 // MARK: - Mapping Rule Types
 enum MappingType: String, Codable {
-    case simpleKey // Billentyű csere (s -> o)
-    case navigation // Vezérlő csere (Home -> Cmd+Left)
+    case simpleKey  // Key swap (e.g. A → B)
+    case navigation // Navigation action (e.g. Home → ⌘←)
 }
 
 enum AppFilterMode: String, Codable {
-    case all        // Minden alkalmazásra érvényes
-    case exclude    // Minden alkalmazásra kivéve...
-    case include    // Csak az alábbi alkalmazásokra
+    case all      // Apply to all apps
+    case exclude  // Apply to all apps except...
+    case include  // Apply only to these apps
 }
 
 struct NavigationAction: Identifiable, Codable, Hashable {
@@ -592,59 +591,59 @@ class KeyMappingManager: ObservableObject {
     // - mappings[] is JSON-encoded into UserDefaults on every change (didSet)
     // - keep the structure stable for backwards compatibility (Codable)
     
-    // Predefined navigation actions - Windows-ról váltóknak optimalizálva
+    // Predefined navigation actions - optimized for Windows switchers
     static let navigationActions: [NavigationAction] = [
-        // === SPECIÁLIS ===
-        NavigationAction(name: "🚫 Eldobás (letiltás)", key: 0, modifiers: []),  // keyCode 0 + no modifiers = discard
+        // === SPECIAL ===
+        NavigationAction(name: "🚫 Discard (block key)", key: 0, modifiers: []),  // keyCode 0 + no modifiers = discard
         
-        // === SOR NAVIGÁCIÓ (Home/End helyett) ===
-        NavigationAction(name: "⌘← Sor elejére", key: 123, modifiers: .maskCommand),
-        NavigationAction(name: "⌘→ Sor végére", key: 124, modifiers: .maskCommand),
-        NavigationAction(name: "⇧⌘← Kijelölés sor elejéig", key: 123, modifiers: [.maskCommand, .maskShift]),
-        NavigationAction(name: "⇧⌘→ Kijelölés sor végéig", key: 124, modifiers: [.maskCommand, .maskShift]),
+        // === LINE NAVIGATION (replaces Home/End) ===
+        NavigationAction(name: "⌘← Line start", key: 123, modifiers: .maskCommand),
+        NavigationAction(name: "⌘→ Line end", key: 124, modifiers: .maskCommand),
+        NavigationAction(name: "⇧⌘← Select to line start", key: 123, modifiers: [.maskCommand, .maskShift]),
+        NavigationAction(name: "⇧⌘→ Select to line end", key: 124, modifiers: [.maskCommand, .maskShift]),
         
-        // === DOKUMENTUM NAVIGÁCIÓ (Ctrl+Home/End helyett) ===
-        NavigationAction(name: "⌘↑ Dokumentum elejére", key: 126, modifiers: .maskCommand),
-        NavigationAction(name: "⌘↓ Dokumentum végére", key: 125, modifiers: .maskCommand),
-        NavigationAction(name: "⇧⌘↑ Kijelölés dok. elejéig", key: 126, modifiers: [.maskCommand, .maskShift]),
-        NavigationAction(name: "⇧⌘↓ Kijelölés dok. végéig", key: 125, modifiers: [.maskCommand, .maskShift]),
+        // === DOCUMENT NAVIGATION (replaces Ctrl+Home/End) ===
+        NavigationAction(name: "⌘↑ Document start", key: 126, modifiers: .maskCommand),
+        NavigationAction(name: "⌘↓ Document end", key: 125, modifiers: .maskCommand),
+        NavigationAction(name: "⇧⌘↑ Select to doc start", key: 126, modifiers: [.maskCommand, .maskShift]),
+        NavigationAction(name: "⇧⌘↓ Select to doc end", key: 125, modifiers: [.maskCommand, .maskShift]),
         
-        // === SZÓ NAVIGÁCIÓ (Ctrl+Left/Right helyett) ===
-        NavigationAction(name: "⌥← Szó elejére", key: 123, modifiers: .maskAlternate),
-        NavigationAction(name: "⌥→ Szó végére", key: 124, modifiers: .maskAlternate),
-        NavigationAction(name: "⇧⌥← Kijelölés szó elejéig", key: 123, modifiers: [.maskAlternate, .maskShift]),
-        NavigationAction(name: "⇧⌥→ Kijelölés szó végéig", key: 124, modifiers: [.maskAlternate, .maskShift]),
+        // === WORD NAVIGATION (replaces Ctrl+Left/Right) ===
+        NavigationAction(name: "⌥← Word start", key: 123, modifiers: .maskAlternate),
+        NavigationAction(name: "⌥→ Word end", key: 124, modifiers: .maskAlternate),
+        NavigationAction(name: "⇧⌥← Select to word start", key: 123, modifiers: [.maskAlternate, .maskShift]),
+        NavigationAction(name: "⇧⌥→ Select to word end", key: 124, modifiers: [.maskAlternate, .maskShift]),
         
-        // === TÖRLÉS (Ctrl+Backspace/Delete helyett) ===
-        NavigationAction(name: "⌥⌫ Szó törlése (balra)", key: 51, modifiers: .maskAlternate),
-        NavigationAction(name: "⌥Del Szó törlése (jobbra)", key: 117, modifiers: .maskAlternate),
-        NavigationAction(name: "⌘⌫ Törlés sor elejéig", key: 51, modifiers: .maskCommand),
+        // === DELETE (replaces Ctrl+Backspace/Delete) ===
+        NavigationAction(name: "⌥⌫ Delete word left", key: 51, modifiers: .maskAlternate),
+        NavigationAction(name: "⌥Del Delete word right", key: 117, modifiers: .maskAlternate),
+        NavigationAction(name: "⌘⌫ Delete to line start", key: 51, modifiers: .maskCommand),
         
-        // === OLDAL NAVIGÁCIÓ ===
-        NavigationAction(name: "⌥↑ Oldal fel (Page Up)", key: 126, modifiers: .maskAlternate),
-        NavigationAction(name: "⌥↓ Oldal le (Page Down)", key: 125, modifiers: .maskAlternate),
+        // === PAGE NAVIGATION ===
+        NavigationAction(name: "⌥↑ Page Up", key: 126, modifiers: .maskAlternate),
+        NavigationAction(name: "⌥↓ Page Down", key: 125, modifiers: .maskAlternate),
         
-        // === UNDO/REDO (Ctrl+Z/Y helyett) ===
-        NavigationAction(name: "⌘Z Visszavonás (Undo)", key: 6, modifiers: .maskCommand),
-        NavigationAction(name: "⇧⌘Z Újra (Redo)", key: 6, modifiers: [.maskCommand, .maskShift]),
+        // === UNDO/REDO (replaces Ctrl+Z/Y) ===
+        NavigationAction(name: "⌘Z Undo", key: 6, modifiers: .maskCommand),
+        NavigationAction(name: "⇧⌘Z Redo", key: 6, modifiers: [.maskCommand, .maskShift]),
         
-        // === VÁGÓLAP (Ctrl+X/C/V helyett) ===
-        NavigationAction(name: "⌘X Kivágás (Cut)", key: 7, modifiers: .maskCommand),
-        NavigationAction(name: "⌘C Másolás (Copy)", key: 8, modifiers: .maskCommand),
-        NavigationAction(name: "⌘V Beillesztés (Paste)", key: 9, modifiers: .maskCommand),
-        NavigationAction(name: "⌘A Összes kijelölése", key: 0, modifiers: .maskCommand),
+        // === CLIPBOARD (replaces Ctrl+X/C/V) ===
+        NavigationAction(name: "⌘X Cut", key: 7, modifiers: .maskCommand),
+        NavigationAction(name: "⌘C Copy", key: 8, modifiers: .maskCommand),
+        NavigationAction(name: "⌘V Paste", key: 9, modifiers: .maskCommand),
+        NavigationAction(name: "⌘A Select All", key: 0, modifiers: .maskCommand),
         
-        // === KERESÉS/MENTÉS ===
-        NavigationAction(name: "⌘F Keresés (Find)", key: 3, modifiers: .maskCommand),
-        NavigationAction(name: "⌘G Következő találat", key: 5, modifiers: .maskCommand),
-        NavigationAction(name: "⌘S Mentés (Save)", key: 1, modifiers: .maskCommand),
-        NavigationAction(name: "⇧⌘S Mentés másként", key: 1, modifiers: [.maskCommand, .maskShift]),
+        // === FIND/SAVE ===
+        NavigationAction(name: "⌘F Find", key: 3, modifiers: .maskCommand),
+        NavigationAction(name: "⌘G Find Next", key: 5, modifiers: .maskCommand),
+        NavigationAction(name: "⌘S Save", key: 1, modifiers: .maskCommand),
+        NavigationAction(name: "⇧⌘S Save As", key: 1, modifiers: [.maskCommand, .maskShift]),
         
-        // === ABLAK KEZELÉS ===
-        NavigationAction(name: "⌘W Ablak/Tab bezárása", key: 13, modifiers: .maskCommand),
-        NavigationAction(name: "⌘Q Kilépés (Quit)", key: 12, modifiers: .maskCommand),
-        NavigationAction(name: "⌘N Új ablak/dokumentum", key: 45, modifiers: .maskCommand),
-        NavigationAction(name: "⌘T Új tab", key: 17, modifiers: .maskCommand),
+        // === WINDOW MANAGEMENT ===
+        NavigationAction(name: "⌘W Close Window/Tab", key: 13, modifiers: .maskCommand),
+        NavigationAction(name: "⌘Q Quit", key: 12, modifiers: .maskCommand),
+        NavigationAction(name: "⌘N New Window/Document", key: 45, modifiers: .maskCommand),
+        NavigationAction(name: "⌘T New Tab", key: 17, modifiers: .maskCommand),
     ]
     
     init() {
@@ -677,18 +676,15 @@ class KeyMappingManager: ObservableObject {
     private func saveMappings() {
         if let encoded = try? JSONEncoder().encode(mappings) {
             UserDefaults.standard.set(encoded, forKey: userDefaultsKey)
-            print("💾 Mentve \(mappings.count) szabály")
         }
     }
     
     private func loadMappings() {
         guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
               let decoded = try? JSONDecoder().decode([KeyMappingRule].self, from: data) else {
-            print("📂 Nincs mentett szabály")
             return
         }
         mappings = decoded
-        print("📂 Betöltve \(mappings.count) szabály")
     }
 }
 
@@ -713,11 +709,8 @@ class RunningAppsManager: ObservableObject {
             }
             .sorted { $0.name < $1.name }
         
-        print("📱 Fetched \(apps.count) running apps")
-        
         DispatchQueue.main.async {
             self.runningApps = apps
-            print("📱 Updated runningApps array with \(apps.count) apps")
         }
     }
 }
@@ -1121,15 +1114,7 @@ struct MappingRow: View {
     @ObservedObject var manager: KeyMappingManager
     @Binding var editingMapping: KeyMappingRule?
     
-    // Special keys lookup
-    private let specialKeys: [UInt16: String] = [
-        36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Esc",
-        115: "Home", 119: "End", 116: "PgUp", 121: "PgDn", 117: "Del→",
-        123: "←", 124: "→", 125: "↓", 126: "↑",
-        122: "F1", 120: "F2", 99: "F3", 118: "F4",
-        96: "F5", 97: "F6", 98: "F7", 100: "F8",
-        101: "F9", 109: "F10", 103: "F11", 111: "F12"
-    ]
+
     
     var body: some View {
         HStack(spacing: 12) {
@@ -1218,7 +1203,7 @@ struct MappingRow: View {
     private func displayKeyName(_ name: String, keyCode: UInt16) -> String {
         // If name looks invalid, try to get from keyCode
         if name.isEmpty || name == "?" || name.hasPrefix("Key(") || name.contains("?") {
-            return specialKeys[keyCode] ?? "(\(keyCode))"
+            return kSpecialKeys[keyCode] ?? "(\(keyCode))"
         }
         // Strip modifier prefixes if present (old format)
         if name.contains(" + ") {
@@ -1323,10 +1308,8 @@ struct AddMappingSheet: View {
                         }
                         .frame(height: 80)
                         .onTapGesture {
-                            print("🖱️ FROM box tapped")
                             isCapturingFrom = true
                             isCapturingTo = false
-                            print("🖱️ isCapturingFrom = true")
                         }
                         
                         if !fromKey.isEmpty {
@@ -1585,9 +1568,7 @@ struct AddMappingSheet: View {
                 isLoadingMapping = false
             }
         }
-        .onDisappear {
-            stopKeyCapture()
-        }
+
     }
     
     private var canSave: Bool {
@@ -1606,8 +1587,6 @@ struct AddMappingSheet: View {
     }
     
     private func saveMapping() {
-        print("💾 Saving mapping: appFilterMode=\(appFilterMode), filteredApps=\(Array(selectedAppBundleIDs))")
-        
         if mappingType == .simpleKey {
             let mapping = KeyMappingRule(
                 type: .simpleKey,
@@ -1654,7 +1633,6 @@ struct AddMappingSheet: View {
         }
 
         keyCaptureMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            print("🎹 Key event: keyCode=\(event.keyCode), from=\(self.isCapturingFrom), to=\(self.isCapturingTo)")
             if self.isCapturingFrom {
                 let baseKey = self.getKeyName(keyCode: event.keyCode, char: event.charactersIgnoringModifiers ?? "")
                 let mods = self.getModifierString(event.modifierFlags)
@@ -1662,13 +1640,11 @@ struct AddMappingSheet: View {
                 self.fromKeyCode = event.keyCode
                 self.fromModifiers = self.getCGEventFlags(event.modifierFlags)
                 self.isCapturingFrom = false
-                print("🎹 Captured FROM: \(self.fromKey)")
                 return nil
             } else if self.isCapturingTo {
                 self.toKey = self.getKeyName(keyCode: event.keyCode, char: event.charactersIgnoringModifiers ?? "")
                 self.toKeyCode = event.keyCode
                 self.isCapturingTo = false
-                print("🎹 Captured TO: \(self.toKey)")
                 return nil
             }
             return event
@@ -1676,15 +1652,7 @@ struct AddMappingSheet: View {
     }
     
     private func getKeyName(keyCode: UInt16, char: String) -> String {
-        let specialKeys: [UInt16: String] = [
-            36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Esc",
-            115: "Home", 119: "End", 116: "PgUp", 121: "PgDn", 117: "Del→",
-            123: "←", 124: "→", 125: "↓", 126: "↑",
-            122: "F1", 120: "F2", 99: "F3", 118: "F4",
-            96: "F5", 97: "F6", 98: "F7", 100: "F8",
-            101: "F9", 109: "F10", 103: "F11", 111: "F12"
-        ]
-        if let name = specialKeys[keyCode] { return name }
+        if let name = kSpecialKeys[keyCode] { return name }
         return char.isEmpty ? "(\(keyCode))" : char.uppercased()
     }
     
@@ -1706,9 +1674,6 @@ struct AddMappingSheet: View {
         return cgFlags.isEmpty ? nil : cgFlags
     }
     
-    private func stopKeyCapture() {
-        // Event monitors are automatically removed when view disappears
-    }
 }
 
 // MARK: - Key Event Row
@@ -1767,111 +1732,118 @@ class KeyRemapper {
     weak var mappingManager: KeyMappingManager?
     var debugLoggingEnabled: Bool = false
     
+    // Track Caps Lock state to detect press/release
+    private var capsLockPressed: Bool = false
+    
     init(mappingManager: KeyMappingManager) {
         self.mappingManager = mappingManager
     }
     
     func startRemapping() {
-        print("🚀 Starting key remapping...")
-        print("   Accessibility check: \(AXIsProcessTrusted())")
+        guard AXIsProcessTrusted() else {
+            print("❌ Accessibility permission not granted")
+            return
+        }
         
-        // Create a session event tap:
-        // - .cgSessionEventTap: observes events at the session level (system-wide for the user session)
-        // - .headInsertEventTap: gets events early
-        // This requires Accessibility permission.
-        let eventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        // Create event tap for keyboard events
+        let eventMask = (1 << CGEventType.keyDown.rawValue) | 
+                        (1 << CGEventType.keyUp.rawValue) |
+                        (1 << CGEventType.flagsChanged.rawValue)
         
-        print("📋 Event mask: \(eventMask)")
-        print("📋 Trying to create CGEvent tap...")
-        
-        let tap = CGEvent.tapCreate(
+        guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: CGEventMask(eventMask),
             callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
-                #if DEBUG
-                print("🎯 Callback triggered! Type: \(type.rawValue)")
-                #endif
                 let remapper = Unmanaged<KeyRemapper>.fromOpaque(refcon!).takeUnretainedValue()
                 return remapper.handleEvent(proxy: proxy, type: type, event: event)
             },
             userInfo: Unmanaged.passUnretained(self).toOpaque()
-        )
-        
-        if tap == nil {
-            print("❌ CGEvent.tapCreate returned NIL!")
-            print("❌ Possible reasons:")
-            print("   1. Accessibility permissions not granted")
-            print("   2. Another app is using the event tap")
-            print("   3. System security settings blocking")
-            print("")
-            print("🔍 Current accessibility status: \(AXIsProcessTrusted())")
+        ) else {
+            print("❌ Failed to create event tap - check Accessibility permissions")
             return
         }
         
-        guard let eventTap = tap else {
-            print("❌ Failed to unwrap event tap!")
-            return
-        }
-        
-        print("✅ Event tap created successfully!")
-        print("   Tap pointer: \(eventTap)")
-        
-        self.eventTap = eventTap
-        
-        // Create run loop source and add to current run loop
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-        print("✅ Run loop source created")
-        
+        self.eventTap = tap
+        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-        print("✅ Run loop source added to current run loop")
+        CGEvent.tapEnable(tap: tap, enable: true)
         
-        // Enable the event tap
-        CGEvent.tapEnable(tap: eventTap, enable: true)
-        
-        print("✅ Event tap enabled and ready!")
-        
-        let enabledCount = mappingManager?.mappings.filter { $0.isEnabled }.count ?? 0
-        print("🔑 Active mappings: \(enabledCount)")
+        #if DEBUG
+        print("✅ Key remapper started with \(mappingManager?.mappings.filter { $0.isEnabled }.count ?? 0) active mappings")
+        #endif
     }
     
     func stopRemapping() {
-        if let eventTap = eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
-            CFMachPortInvalidate(eventTap)
-            self.eventTap = nil
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+            eventTap = nil
         }
-        
-        if let runLoopSource = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-            self.runLoopSource = nil
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+            runLoopSource = nil
         }
-        
-        print("🛑 Event tap disabled")
     }
     
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        // Handle tap disabled
+        // Re-enable tap if it was disabled
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            print("⚠️ Event tap was disabled, re-enabling...")
             if let eventTap = eventTap {
                 CGEvent.tapEnable(tap: eventTap, enable: true)
             }
             return Unmanaged.passRetained(event)
         }
         
-        // Only process key events
-        guard type == .keyDown || type == .keyUp else {
+        // Process key events and flags changed (for Caps Lock and modifiers)
+        guard type == .keyDown || type == .keyUp || type == .flagsChanged else {
             return Unmanaged.passRetained(event)
         }
         
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let eventFlags = event.flags
         
+        // Special handling for Caps Lock via flagsChanged
+        // Note: flagsChanged is triggered for ALL modifier keys, but we check the .maskAlphaShift flag
+        // to specifically detect Caps Lock state changes
+        if type == .flagsChanged {
+            let capsLockActive = eventFlags.contains(.maskAlphaShift)
+            
+            // Detect Caps Lock press (transition from inactive to active)
+            if capsLockActive && !capsLockPressed {
+                capsLockPressed = true
+                // Treat as "key down" for Caps Lock (use keyCode 57)
+                return handleKeyMapping(keyCode: 57, eventFlags: eventFlags, isKeyDown: true)
+            }
+            // Detect Caps Lock release (transition from active to inactive)
+            else if !capsLockActive && capsLockPressed {
+                capsLockPressed = false
+                // Treat as "key up" for Caps Lock (use keyCode 57)
+                return handleKeyMapping(keyCode: 57, eventFlags: eventFlags, isKeyDown: false)
+            }
+            
+            // No Caps Lock state change, pass through
+            return Unmanaged.passRetained(event)
+        }
+        
+        // Handle normal key events
+        if type == .keyDown || type == .keyUp {
+            return handleKeyMapping(keyCode: keyCode, eventFlags: eventFlags, isKeyDown: type == .keyDown)
+        }
+        
+        return Unmanaged.passRetained(event)
+    }
+    
+    private func handleKeyMapping(keyCode: UInt16, eventFlags: CGEventFlags, isKeyDown: Bool) -> Unmanaged<CGEvent>? {
         // Get enabled mappings from manager
         guard let mappings = mappingManager?.mappings.filter({ $0.isEnabled }) else {
-            return Unmanaged.passRetained(event)
+            // Create pass-through event
+            guard let passThroughEvent = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: isKeyDown) else {
+                return nil
+            }
+            passThroughEvent.flags = eventFlags
+            return Unmanaged.passRetained(passThroughEvent)
         }
         
         // Get active app bundle ID for per-app filtering
@@ -1948,7 +1920,7 @@ class KeyRemapper {
                 guard let newEvent = CGEvent(
                     keyboardEventSource: nil,
                     virtualKey: CGKeyCode(mapping.targetKeyCode),
-                    keyDown: type == .keyDown
+                    keyDown: isKeyDown
                 ) else {
                     continue
                 }
@@ -1960,19 +1932,24 @@ class KeyRemapper {
                     newEvent.flags = modifiers
                 } else {
                     // Keep original modifiers if no target modifiers specified
-                    newEvent.flags = event.flags
+                    newEvent.flags = eventFlags
                 }
                 
                 return Unmanaged.passRetained(newEvent)
             }
         }
         
-        return Unmanaged.passRetained(event)
+        // No mapping found - create pass-through event
+        guard let passThroughEvent = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: isKeyDown) else {
+            return nil
+        }
+        passThroughEvent.flags = eventFlags
+        return Unmanaged.passRetained(passThroughEvent)
     }
 }
 
 // MARK: - Preview
-// Preview csak Xcode-ban működik
+// Xcode preview (disabled - only works in Xcode)
 // #Preview {
 //     ContentView()
 //         .frame(width: 600, height: 500)
