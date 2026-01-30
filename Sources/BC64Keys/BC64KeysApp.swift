@@ -42,6 +42,7 @@ struct BC64KeysApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(mappingManager: appDelegate.mappingManager, statusManager: appDelegate.statusManager)
+                .environmentObject(appDelegate)
                 .frame(minWidth: 700, minHeight: 500)
         }
     }
@@ -93,10 +94,14 @@ class LaunchAtLoginManager: ObservableObject {
 }
 
 // MARK: - App Delegate for Accessibility Permissions
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     var keyRemapper: KeyRemapper?
     var statusCheckTimer: Timer?
     var statusItem: NSStatusItem?
+    
+    // Track previous state to avoid spamming logs
+    private var previousAccessibilityState: Bool?
+    private var previousRemapperState: Bool = false
     
     // Debug logging is now optional - only enabled if user explicitly turns it on in Settings.
     // This reduces SSD wear and avoids logging sensitive keystroke patterns by default.
@@ -114,12 +119,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }()
     let statusManager = StatusManager()
     let mappingManager = KeyMappingManager()
+    
+    // Cache DateFormatter for performance (DateFormatter creation is expensive)
+    private lazy var logDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
 
-    // Writes operational status to both stdout and a per-user log file under ~/Library/Logs.
-    // File logging is now OPTIONAL (controlled by debugLoggingEnabled toggle) to reduce SSD wear.
+    // Writes operational status to both stdout (DEBUG mode) and optionally to a per-user log file.
+    // File logging is OPTIONAL (controlled by debugLoggingEnabled toggle) to reduce SSD wear.
     
     func log(_ message: String) {
-        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        let timestamp = logDateFormatter.string(from: Date())
         let logMessage = "[\(timestamp)] \(message)\n"
         
         // Always print to console for development/debugging
@@ -133,10 +145,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let data = logMessage.data(using: .utf8) {
             let path = logFileURL.path
             if FileManager.default.fileExists(atPath: path) {
-                if let fileHandle = FileHandle(forWritingAtPath: path) {
+                // Use modern FileHandle with automatic resource management
+                do {
+                    let fileHandle = try FileHandle(forWritingTo: logFileURL)
+                    defer { try? fileHandle.close() }
                     fileHandle.seekToEndOfFile()
                     fileHandle.write(data)
-                    fileHandle.closeFile()
+                } catch {
+                    // Fallback: overwrite file if append fails
+                    try? data.write(to: logFileURL)
                 }
             } else {
                 try? data.write(to: logFileURL)
@@ -167,11 +184,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.setupWindowDelegates()
         }
         
-        // Start periodic status check (1 second interval).
-        // Reason: Accessibility permission can be granted/revoked while the app is running.
-        statusCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.checkAndReportStatus()
-        }
+        // Start frequent status check (2 second interval) until accessibility is granted.
+        // Once granted, the timer will be stopped to avoid unnecessary overhead.
+        // If permission is later revoked, frequent checking will resume automatically.
+        startStatusCheckTimer(interval: 2.0)
         
         // Initial check
         checkAndReportStatus()
@@ -295,30 +311,63 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     func checkAndReportStatus() {
         let hasAccessibility = AXIsProcessTrusted()
+        let remapperRunning = keyRemapper != nil
         
         // Update UI
-        statusManager.update(accessibility: hasAccessibility, remapperRunning: keyRemapper != nil)
+        statusManager.update(accessibility: hasAccessibility, remapperRunning: remapperRunning)
         
-        log("")
-        log("⏰ STATUS CHECK:")
-        log("   🔐 Accessibility: \(hasAccessibility ? "✅ GRANTED" : "❌ NOT GRANTED")")
+        // Only log if state changed to avoid spamming and performance impact
+        let stateChanged = (previousAccessibilityState != hasAccessibility) || (previousRemapperState != remapperRunning)
+        
+        if stateChanged {
+            log("")
+            log("⏰ STATUS CHANGE DETECTED:")
+            log("   🔐 Accessibility: \(hasAccessibility ? "✅ GRANTED" : "❌ NOT GRANTED")")
+        }
         
         if hasAccessibility {
             if keyRemapper == nil {
                 log("   🎬 Starting key remapper...")
                 startRemapping()
-            } else {
+            } else if stateChanged {
                 log("   ✅ Remapper is running")
             }
+            
+            // Accessibility granted - stop frequent checking to save resources
+            if statusCheckTimer != nil {
+                log("   ⏸️  Stopping status check timer (permission granted)")
+                statusCheckTimer?.invalidate()
+                statusCheckTimer = nil
+            }
         } else {
-            log("   ⚠️  MISSING PERMISSIONS!")
-            log("   📋 Fix: System Settings > Privacy & Security > Accessibility")
-            log("   📋 Add: BC64Keys (toggle it ON)")
+            if stateChanged {
+                log("   ⚠️  MISSING PERMISSIONS!")
+                log("   📋 Fix: System Settings > Privacy & Security > Accessibility")
+                log("   📋 Add: BC64Keys (toggle it ON)")
+            }
             if keyRemapper != nil {
                 log("   🛑 Stopping remapper (no permissions)")
                 keyRemapper?.stopRemapping()
                 keyRemapper = nil
             }
+            
+            // Permission lost/missing - restart frequent checking if not already running
+            if statusCheckTimer == nil {
+                log("   ▶️  Restarting status check timer (checking every 2 seconds)")
+                startStatusCheckTimer(interval: 2.0)
+            }
+        }
+        
+        // Update previous state
+        previousAccessibilityState = hasAccessibility
+        previousRemapperState = remapperRunning
+    }
+    
+    // Helper to start the status check timer with specified interval
+    private func startStatusCheckTimer(interval: TimeInterval) {
+        statusCheckTimer?.invalidate() // Clear any existing timer
+        statusCheckTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.checkAndReportStatus()
         }
     }
     
@@ -337,6 +386,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         log("👋 App terminating, stopping remapper...")
         statusCheckTimer?.invalidate()
+        keyRemapper?.stopRemapping()
+    }
+    
+    // MARK: - Temporary Remapper Suspension
+    // Used when capturing keys for new/edited mappings to ensure we capture the original key,
+    // not the already-remapped key.
+    func suspendRemapping() {
+        keyRemapper?.stopRemapping()
+        log("⏸️  Remapper temporarily suspended for key capture")
+    }
+    
+    func resumeRemapping() {
+        if AXIsProcessTrusted(), keyRemapper != nil {
+            keyRemapper?.startRemapping()
+            log("▶️  Remapper resumed after key capture")
+        }
+    }
+    
+    deinit {
+        // Cleanup resources (timer, status item, remapper)
+        statusCheckTimer?.invalidate()
+        if let statusItem = statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
         keyRemapper?.stopRemapping()
     }
 }
@@ -1039,6 +1112,7 @@ struct MappingView: View {
     @StateObject private var appsManager = RunningAppsManager()
     @State private var showAddSheet = false
     @State private var editingMapping: KeyMappingRule?
+    @EnvironmentObject var appDelegate: AppDelegate
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1090,6 +1164,7 @@ struct MappingView: View {
         }
         .sheet(isPresented: $showAddSheet) {
             AddMappingSheet(manager: mappingManager, appsManager: appsManager, isPresented: $showAddSheet)
+                .environmentObject(appDelegate)
         }
         .sheet(item: $editingMapping) { mapping in
             AddMappingSheet(
@@ -1101,6 +1176,7 @@ struct MappingView: View {
                 ),
                 editingMapping: mapping
             )
+            .environmentObject(appDelegate)
         }
         .onAppear {
             appsManager.fetchRunningApps()
@@ -1113,8 +1189,6 @@ struct MappingRow: View {
     let mapping: KeyMappingRule
     @ObservedObject var manager: KeyMappingManager
     @Binding var editingMapping: KeyMappingRule?
-    
-
     
     var body: some View {
         HStack(spacing: 12) {
@@ -1218,6 +1292,7 @@ struct AddMappingSheet: View {
     @ObservedObject var manager: KeyMappingManager
     @ObservedObject var appsManager: RunningAppsManager
     @Binding var isPresented: Bool
+    @EnvironmentObject var appDelegate: AppDelegate
     
     // Optional: if editing an existing mapping
     var editingMapping: KeyMappingRule?
@@ -1543,6 +1618,9 @@ struct AddMappingSheet: View {
         }
         .frame(width: 900, height: 650)
         .onAppear {
+            // Suspend remapping to capture original keys, not remapped ones
+            appDelegate.suspendRemapping()
+            
             startKeyCapture()
             appsManager.fetchRunningApps()
             
@@ -1567,6 +1645,15 @@ struct AddMappingSheet: View {
                 
                 isLoadingMapping = false
             }
+        }
+        .onDisappear {
+            // Clean up key capture monitor to prevent memory leak
+            if let monitor = keyCaptureMonitor {
+                NSEvent.removeMonitor(monitor)
+                keyCaptureMonitor = nil
+            }
+            // Resume remapping when sheet closes
+            appDelegate.resumeRemapping()
         }
 
     }
@@ -1680,6 +1767,13 @@ struct AddMappingSheet: View {
 struct KeyEventRow: View {
     let event: KeyEventMonitor.KeyEvent
     
+    // Cache DateFormatter for performance (expensive to create repeatedly)
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
+    
     var body: some View {
         HStack(spacing: 15) {
             // Timestamp
@@ -1719,9 +1813,7 @@ struct KeyEventRow: View {
     }
     
     private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter.string(from: date)
+        Self.timeFormatter.string(from: date)
     }
 }
 
@@ -1735,6 +1827,11 @@ class KeyRemapper {
     // Track Caps Lock state to detect press/release
     private var capsLockPressed: Bool = false
     
+    // Cache active app bundle ID to avoid frequent NSWorkspace calls
+    // Updated periodically via notification observer
+    private var cachedBundleID: String = ""
+    private var workspaceObserver: Any?
+    
     init(mappingManager: KeyMappingManager) {
         self.mappingManager = mappingManager
     }
@@ -1743,6 +1840,20 @@ class KeyRemapper {
         guard AXIsProcessTrusted() else {
             print("❌ Accessibility permission not granted")
             return
+        }
+        
+        // Initialize cached bundle ID
+        cachedBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        
+        // Observe app activation changes to update cached bundle ID
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+                self?.cachedBundleID = app.bundleIdentifier ?? ""
+            }
         }
         
         // Create event tap for keyboard events
@@ -1776,6 +1887,12 @@ class KeyRemapper {
     }
     
     func stopRemapping() {
+        // Remove workspace observer
+        if let observer = workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            workspaceObserver = nil
+        }
+        
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             CFMachPortInvalidate(tap)
@@ -1846,13 +1963,12 @@ class KeyRemapper {
             return Unmanaged.passRetained(passThroughEvent)
         }
         
-        // Get active app bundle ID for per-app filtering
-        let activeApp = NSWorkspace.shared.frontmostApplication
-        let activeBundleID = activeApp?.bundleIdentifier ?? ""
+        // Get active app bundle ID for per-app filtering (using cached value for performance)
+        let activeBundleID = cachedBundleID
         
         // Debug: log active app info
         if debugLoggingEnabled && !activeBundleID.isEmpty {
-            print("🎯 Active app: \(activeApp?.localizedName ?? "unknown") [\(activeBundleID)]")
+            print("🎯 Active app: \(activeBundleID)")
         }
         
         // Matching strategy:
@@ -1945,6 +2061,11 @@ class KeyRemapper {
         }
         passThroughEvent.flags = eventFlags
         return Unmanaged.passRetained(passThroughEvent)
+    }
+    
+    deinit {
+        // Ensure cleanup happens even if stopRemapping wasn't explicitly called
+        stopRemapping()
     }
 }
 
