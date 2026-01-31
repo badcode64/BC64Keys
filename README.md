@@ -72,18 +72,22 @@ Coming from Windows? BC64Keys includes pre-configured actions for:
 
 ---
 
-## Screenshots
+## Screenshots 📸
 
-### Main Interface - Mapping Tab
-*Create and manage your key mappings with an intuitive visual interface*
+### Main Window
+*Clean, intuitive interface for managing your key mappings*
 
-### Monitor Tab
-*See exactly what keys are being pressed in real-time*
+![Main Window](main_window.png)
 
-### Settings
-*Configure language, launch at login, and debug options*
+### Key Mapping in Action
+*Visual key capture - just click and press the key you want to remap*
 
-> 📸 **Screenshots coming soon!** If you'd like to contribute, feel free to submit screenshots via a PR.
+![Key Mapping](key_mapping.png)
+
+### Initial Setup
+*Quick permission setup to get started*
+
+![Setup](setup.png)
 
 ---
 

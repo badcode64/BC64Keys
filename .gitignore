@@ -15,6 +15,11 @@
 !AppIcon.icns
 !icon.png
 
+# Screenshots
+!main_window.png
+!key_mapping.png
+!setup.png
+
 # Forráskód
 !Sources/
 !Sources/BC64Keys/
