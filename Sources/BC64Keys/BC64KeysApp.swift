@@ -114,7 +114,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let base = (fm.urls(for: .libraryDirectory, in: .userDomainMask).first
                     ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library"))
             .appendingPathComponent("Logs/BC64Keys", isDirectory: true)
-        try? fm.createDirectory(at: base, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: base, withIntermediateDirectories: true, attributes: [
+            .posixPermissions: 0o700  // Only owner can read/write/execute
+        ])
         return base.appendingPathComponent("bc64keys-status.log")
     }()
     let statusManager = StatusManager()
@@ -129,6 +131,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     // Writes operational status to both stdout (DEBUG mode) and optionally to a per-user log file.
     // File logging is OPTIONAL (controlled by debugLoggingEnabled toggle) to reduce SSD wear.
+    // Log files are created with restricted permissions (0o600) to prevent unauthorized access.
     
     func log(_ message: String) {
         let timestamp = logDateFormatter.string(from: Date())
@@ -153,10 +156,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                     fileHandle.write(data)
                 } catch {
                     // Fallback: overwrite file if append fails
-                    try? data.write(to: logFileURL)
+                    try? data.write(to: logFileURL, options: [.atomic, .completeFileProtection])
+                    // Set secure permissions (0o600 - only owner can read/write)
+                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logFileURL.path)
                 }
             } else {
-                try? data.write(to: logFileURL)
+                try? data.write(to: logFileURL, options: [.atomic, .completeFileProtection])
+                // Set secure permissions (0o600 - only owner can read/write)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logFileURL.path)
             }
         }
     }
@@ -311,7 +318,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     
     func checkAndReportStatus() {
         let hasAccessibility = AXIsProcessTrusted()
-        let remapperRunning = keyRemapper != nil
+        let remapperRunning = keyRemapper?.isRunning ?? false
         
         // Update UI
         statusManager.update(accessibility: hasAccessibility, remapperRunning: remapperRunning)
@@ -329,13 +336,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             if keyRemapper == nil {
                 log("   🎬 Starting key remapper...")
                 startRemapping()
+            } else if !remapperRunning {
+                // Remapper exists but not running - restart it
+                log("   🔄 Restarting key remapper...")
+                keyRemapper?.startRemapping()
             } else if stateChanged {
                 log("   ✅ Remapper is running")
             }
             
-            // Accessibility granted - stop frequent checking to save resources
-            if statusCheckTimer != nil {
-                log("   ⏸️  Stopping status check timer (permission granted)")
+            // Accessibility granted AND remapper running - stop frequent checking to save resources
+            // Keep checking if remapper is not running to detect when it starts
+            if statusCheckTimer != nil && remapperRunning {
+                log("   ⏸️  Stopping status check timer (permission granted and remapper running)")
                 statusCheckTimer?.invalidate()
                 statusCheckTimer = nil
             }
@@ -395,12 +407,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func suspendRemapping() {
         keyRemapper?.stopRemapping()
         log("⏸️  Remapper temporarily suspended for key capture")
+        // Update status to reflect suspended state
+        let hasAccessibility = AXIsProcessTrusted()
+        statusManager.update(accessibility: hasAccessibility, remapperRunning: false)
     }
     
     func resumeRemapping() {
         if AXIsProcessTrusted(), keyRemapper != nil {
             keyRemapper?.startRemapping()
             log("▶️  Remapper resumed after key capture")
+            // Update status to reflect running state
+            statusManager.update(accessibility: true, remapperRunning: keyRemapper?.isRunning ?? false)
         }
     }
     
@@ -417,6 +434,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 // MARK: - Key Event Monitor
 class KeyEventMonitor: ObservableObject {
     @Published var keyEvents: [KeyEvent] = []
+    @Published var isMonitoring = false
     private var globalEventMonitor: Any?
     private var localEventMonitor: Any?
     private let maxEvents = 100
@@ -448,6 +466,8 @@ class KeyEventMonitor: ObservableObject {
             self?.handleKeyEvent(event)
             return event
         }
+        
+        isMonitoring = true
     }
     
     func stopMonitoring() {
@@ -459,6 +479,7 @@ class KeyEventMonitor: ObservableObject {
             NSEvent.removeMonitor(monitor)
             localEventMonitor = nil
         }
+        isMonitoring = false
     }
     
     private func handleKeyEvent(_ event: NSEvent) {
@@ -794,7 +815,7 @@ struct ContentView: View {
     @ObservedObject var mappingManager: KeyMappingManager
     @ObservedObject var statusManager: StatusManager
     @ObservedObject var l10n = L10n.shared
-    @State private var selectedTab = 0
+    @State private var selectedTab = 0  // Start with Mapping tab (was Monitor)
     
     var body: some View {
         VStack(spacing: 0) {
@@ -803,15 +824,15 @@ struct ContentView: View {
             
             // Tabs
             TabView(selection: $selectedTab) {
-                MonitorView(keyMonitor: keyMonitor)
-                    .tabItem {
-                        Label(L10n.current.tabMonitor, systemImage: "eye")
-                    }
-                    .tag(0)
-                
                 MappingView(mappingManager: mappingManager)
                     .tabItem {
                         Label(L10n.current.tabMapping, systemImage: "arrow.left.arrow.right")
+                    }
+                    .tag(0)
+                
+                MonitorView(keyMonitor: keyMonitor)
+                    .tabItem {
+                        Label(L10n.current.tabMonitor, systemImage: "eye")
                     }
                     .tag(1)
                 
@@ -1022,7 +1043,6 @@ struct SettingsView: View {
 // MARK: - Monitor View (Original functionality)
 struct MonitorView: View {
     @ObservedObject var keyMonitor: KeyEventMonitor
-    @State private var isMonitoring = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1035,13 +1055,13 @@ struct MonitorView: View {
                 HStack(spacing: 15) {
                     Button(action: toggleMonitoring) {
                         HStack {
-                            Image(systemName: isMonitoring ? "stop.circle.fill" : "play.circle.fill")
-                            Text(isMonitoring ? L10n.current.stopMonitoring : L10n.current.startMonitoring)
+                            Image(systemName: keyMonitor.isMonitoring ? "stop.circle.fill" : "play.circle.fill")
+                            Text(keyMonitor.isMonitoring ? L10n.current.stopMonitoring : L10n.current.startMonitoring)
                         }
                         .frame(width: 180)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(isMonitoring ? .red : .green)
+                    .tint(keyMonitor.isMonitoring ? .red : .green)
                     
                     Button(action: keyMonitor.clearEvents) {
                         HStack {
@@ -1052,7 +1072,7 @@ struct MonitorView: View {
                     .buttonStyle(.bordered)
                 }
                 
-                if !isMonitoring {
+                if !keyMonitor.isMonitoring {
                     Text("⚠️ \(L10n.current.monitorHintStart)")
                         .foregroundColor(.orange)
                         .font(.caption)
@@ -1091,17 +1111,13 @@ struct MonitorView: View {
                 }
             }
         }
-        .onDisappear {
-            keyMonitor.stopMonitoring()
-        }
     }
     
     private func toggleMonitoring() {
-        isMonitoring.toggle()
-        if isMonitoring {
-            keyMonitor.startMonitoring()
-        } else {
+        if keyMonitor.isMonitoring {
             keyMonitor.stopMonitoring()
+        } else {
+            keyMonitor.startMonitoring()
         }
     }
 }
@@ -1153,7 +1169,7 @@ struct MappingView: View {
                 }
             } else {
                 ScrollView {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 3) {
                         ForEach(mappingManager.mappings) { mapping in
                             MappingRow(mapping: mapping, manager: mappingManager, editingMapping: $editingMapping)
                         }
@@ -1200,8 +1216,9 @@ struct MappingRow: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .scaleEffect(0.8)
+            .frame(width: 40)
             
-            // Source key with modifiers
+            // Source key with modifiers - FIXED WIDTH
             HStack(spacing: 2) {
                 if let mods = mapping.sourceModifiers {
                     Text(modifierSymbols(mods))
@@ -1211,8 +1228,9 @@ struct MappingRow: View {
                 Text(displayKeyName(mapping.sourceKeyName, keyCode: mapping.sourceKeyCode))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
             }
+            .frame(width: 140, alignment: .leading)
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
             .background(Color.blue.opacity(0.15))
             .cornerRadius(6)
             
@@ -1231,7 +1249,7 @@ struct MappingRow: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
             .background(Color.green.opacity(0.15))
             .cornerRadius(6)
             
@@ -1259,7 +1277,7 @@ struct MappingRow: View {
             .buttonStyle(.borderless)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(8)
         .opacity(mapping.isEnabled ? 1.0 : 0.5)
@@ -1829,8 +1847,19 @@ class KeyRemapper {
     
     // Cache active app bundle ID to avoid frequent NSWorkspace calls
     // Updated periodically via notification observer
-    private var cachedBundleID: String = ""
+    // Thread-safe access via serial queue to prevent race conditions
+    private let bundleIDQueue = DispatchQueue(label: "com.bc64keys.bundleIDQueue")
+    private var _cachedBundleID: String = ""
+    private var cachedBundleID: String {
+        get { bundleIDQueue.sync { _cachedBundleID } }
+        set { bundleIDQueue.sync { _cachedBundleID = newValue } }
+    }
     private var workspaceObserver: Any?
+    
+    // Public property to check if remapper is actually running (has active event tap)
+    var isRunning: Bool {
+        return eventTap != nil
+    }
     
     init(mappingManager: KeyMappingManager) {
         self.mappingManager = mappingManager
@@ -1922,8 +1951,9 @@ class KeyRemapper {
         let eventFlags = event.flags
         
         // Special handling for Caps Lock via flagsChanged
-        // Note: flagsChanged is triggered for ALL modifier keys, but we check the .maskAlphaShift flag
-        // to specifically detect Caps Lock state changes
+        // Note: flagsChanged is triggered when ANY modifier key state changes (Shift, Cmd, Opt, Ctrl, Caps Lock),
+        // but we only handle Caps Lock here by checking the .maskAlphaShift flag.
+        // Other modifiers (Shift, Cmd, etc.) are handled via eventFlags matching in handleKeyMapping.
         if type == .flagsChanged {
             let capsLockActive = eventFlags.contains(.maskAlphaShift)
             
@@ -2044,6 +2074,7 @@ class KeyRemapper {
                 // Set modifiers:
                 // - For navigation actions, targetModifiers is usually set (e.g. ⌘ + ←).
                 // - For simple key swaps, targetModifiers is nil and we preserve the original flags.
+                // Memory management: Unmanaged.passRetained transfers ownership to caller (CGEventTap system)
                 if let modifiers = mapping.targetModifiers {
                     newEvent.flags = modifiers
                 } else {
