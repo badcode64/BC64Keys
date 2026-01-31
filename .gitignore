@@ -59,9 +59,10 @@ exportOptions.plist
 .env.local
 secrets.sh
 
-# Notarization scripts (keep local only)
+# Notarization scripts and logs (keep local only)
 notarize.sh
 NOTARIZATION_GUIDE.md
+notarization-log*.txt
 
 # GitHub Copilot instructions (keep local only)
 .github/copilot-instructions.md
