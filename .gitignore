@@ -1,71 +1,26 @@
-.DS_Store
-/.build
-/Packages
-xcuserdata/
-DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
-.netrc
+# WHITELIST: Csak ezek a fájlok kerülhetnek fel GitHub-ra
+# Minden más automatikusan blokkolt
 
-# App build artifacts produced by ./build.sh (only in project root)
-/BC64Keys
-/BC64Keys_tmp
-/BC64Keys.app/
-/BC64Keys.dSYM/
+# 1. Blokkold mindent először
+*
+*/
 
-# Local logs
-/tmp/bc64keys-status.log
+# 2. Engedélyezd csak amit kell
+!.gitignore
+!README.md
+!LICENSE
+!CONTRIBUTING.md
+!build.sh
+!run.sh
+!AppIcon.icns
+!icon.png
 
-# Editor / misc
-.vscode/
-*.swp
+# Forráskód
+!Sources/
+!Sources/BC64Keys/
+!Sources/BC64Keys/BC64KeysApp.swift
+!Sources/BC64Keys/Localization.swift
 
-# Local manual backups (these should not be committed)
-*.bak
-*.backup-*
-Sources.backup/
-
-# Apple Developer Certificates & Keys (security - never commit these)
-*.p12
-*.key
-*.pem
-*.cer
-*.certSigningRequest
-*.mobileprovision
-*.provisionprofile
-*_key.pem
-Certificates/
-Keys/
-
-# Notarization credentials (CRITICAL - never commit)
-*.credentials
-*.password
-notarization-password.txt
-apple-credentials.txt
-.notarization-password
-.notarization-credentials.sh
-.apple-id
-*.keychain
-exportOptions.plist
-
-# Build artifacts with embedded credentials
-*.xcarchive
-*.pkg
-*.dmg
-*.zip.dSYM
-
-# Environment files
-.env
-.env.local
-secrets.sh
-
-# Notarization scripts and logs (keep local only)
-notarize.sh
-NOTARIZATION_GUIDE.md
-notarization-log*.txt
-
-# GitHub Copilot instructions (keep local only)
-.github/copilot-instructions.md
-*.zip
-create-dmg.sh
-dmg_temp/
+# GitHub config (ha van)
+!.github/
+!.github/**
