@@ -168,6 +168,138 @@ By default, BC64Keys doesn't write logs to save SSD wear. To enable:
 
 ---
 
+## Troubleshooting
+
+### My key mappings aren't working
+
+**Check Accessibility Permission:**
+1. Open **System Settings** → **Privacy & Security** → **Accessibility**
+2. Verify BC64Keys is listed and **enabled** (checkbox checked)
+3. If it's enabled but not working:
+   - Toggle it **off** then back **on**
+   - Completely quit BC64Keys (Cmd+Q) and relaunch it
+
+**Check Status:**
+- Look at the **Status** tab in BC64Keys
+- Should show "✅ Enabled" — if it shows "❌ No Permission", grant Accessibility access
+- Should show "🟢 Running" — if not, check the error message
+
+**Still not working?**
+- Check the **Monitor** tab and press a key — if nothing appears, the event tap isn't working
+- Enable **Debug Logging** in Settings and check `~/Library/Logs/BC64Keys/bc64keys-status.log` for errors
+- Make sure no other keyboard remapper (like Karabiner Elements) is running
+
+### The app won't open / Shows "damaged" error
+
+**On macOS Sequoia or later:**
+```bash
+xattr -cr /Applications/BC64Keys.app
+```
+
+**Verify code signature:**
+```bash
+codesign -vv --deep --strict /Applications/BC64Keys.app
+```
+
+If signature is invalid, re-download from [official releases](https://github.com/badcode64/BC64Keys/releases/latest).
+
+### Keys are stuck or behaving strangely
+
+1. **Disable remapper:**
+   - Go to **Status** tab
+   - Click **Stop Remapper**
+   - Wait 2 seconds
+   - Click **Start Remapper**
+
+2. **If keys are still stuck:**
+   - Completely quit BC64Keys (Cmd+Q)
+   - Press the stuck keys manually a few times
+   - Relaunch BC64Keys
+
+3. **Check for conflicting rules:**
+   - Go to **Mapping** tab
+   - Look for circular mappings (e.g., A→B and B→A)
+   - Delete conflicting rules
+
+### High CPU usage
+
+BC64Keys should use almost 0% CPU when idle. High CPU usage indicates a problem:
+
+1. Check **Monitor** tab — if it's showing thousands of events per second, you may have a key that's auto-repeating
+2. Quit and relaunch BC64Keys
+3. If problem persists, disable Debug Logging (Settings tab)
+
+### Settings/mappings not saving
+
+Check file permissions:
+```bash
+ls -la ~/Library/Preferences/com.bc64.BC64Keys.plist
+```
+
+Should show your user as owner. If not accessible, reset:
+```bash
+defaults delete com.bc64.BC64Keys
+```
+(Warning: This deletes all your settings)
+
+### Error: "Failed to create event tap"
+
+This means macOS is blocking the Accessibility API access:
+
+1. **Remove and re-add Accessibility permission:**
+   - System Settings → Privacy & Security → Accessibility
+   - Click the **ⓘ** button next to BC64Keys
+   - Click **-** (minus) to remove it
+   - Quit BC64Keys completely
+   - Relaunch BC64Keys — it will re-request permission
+
+2. **Still failing?** Restart your Mac (sometimes macOS's TCC daemon needs a restart)
+
+### Reporting Other Issues
+
+If your problem isn't listed here:
+1. Enable **Debug Logging** in Settings
+2. Reproduce the issue
+3. Check `~/Library/Logs/BC64Keys/bc64keys-status.log`
+4. [Open an issue](https://github.com/badcode64/BC64Keys/issues/new/choose) with:
+   - macOS version
+   - BC64Keys version
+   - Steps to reproduce
+   - Relevant log excerpts
+
+---
+
+## Uninstalling
+
+### Quick Removal
+1. Quit BC64Keys (Cmd+Q)
+2. Move `/Applications/BC64Keys.app` to Trash
+3. Optionally remove Accessibility permission:
+   - System Settings → Privacy & Security → Accessibility
+   - Select BC64Keys and click **-** (minus)
+
+### Complete Removal (including all data)
+
+```bash
+# Remove the app
+rm -rf /Applications/BC64Keys.app
+
+# Remove settings
+defaults delete com.bc64.BC64Keys
+
+# Remove logs (if debug logging was enabled)
+rm -rf ~/Library/Logs/BC64Keys
+
+# Remove login item (if enabled)
+osascript -e 'tell application "System Events" to delete login item "BC64Keys"'
+```
+
+After removal, go to **System Settings** → **Privacy & Security** → **Accessibility** and remove BC64Keys from the list.
+
+**Note:** Your settings are stored in macOS UserDefaults. To preserve them when updating, just replace the app — don't run the complete removal commands.
+
+---
+
 ## Building
 
 **Requirements:**
@@ -257,14 +389,18 @@ Yes! BC64Keys is a universal binary that runs natively on both Apple Silicon (M1
 <details>
 <summary><b>How do I uninstall BC64Keys?</b></summary>
 
-1. Quit BC64Keys (Cmd+Q)
-2. Disable "Launch at Login" in Settings (optional, but recommended)
-3. Move BC64Keys.app from Applications to Trash
-4. Remove Accessibility permission: System Settings → Privacy & Security → Accessibility → Remove BC64Keys
+See the detailed [Uninstalling](#uninstalling) section above for complete removal instructions.
 
-Your settings will remain in UserDefaults. To completely remove everything:
+**Quick removal:**
+1. Quit BC64Keys (Cmd+Q)
+2. Move BC64Keys.app from Applications to Trash
+3. Remove Accessibility permission in System Settings (optional)
+
+**Complete removal** (including settings):
 ```bash
+rm -rf /Applications/BC64Keys.app
 defaults delete com.bc64.BC64Keys
+rm -rf ~/Library/Logs/BC64Keys
 ```
 </details>
 
