@@ -10,7 +10,7 @@ import ServiceManagement
 //
 // How it works (high level):
 // - UI lets the user define KeyMappingRule items (source key + optional modifiers → target key/modifiers)
-// - Rules are persisted in UserDefaults via KeyMappingManager
+// - Rules are persisted in UserDefaults via KeyMappingManager (JSON encoded)
 // - A CGEventTap (KeyRemapper) intercepts keyDown/keyUp events and either:
 //   - blocks them (discard), or
 //   - emits a replacement CGEvent (remap)
@@ -152,18 +152,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                 do {
                     let fileHandle = try FileHandle(forWritingTo: logFileURL)
                     defer { try? fileHandle.close() }
-                    fileHandle.seekToEndOfFile()
-                    fileHandle.write(data)
+                    try fileHandle.seekToEnd()
+                    try fileHandle.write(contentsOf: data)
                 } catch {
                     // Fallback: overwrite file if append fails
-                    try? data.write(to: logFileURL, options: [.atomic, .completeFileProtection])
-                    // Set secure permissions (0o600 - only owner can read/write)
-                    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logFileURL.path)
+                    do {
+                        try data.write(to: logFileURL, options: [.atomic, .completeFileProtection])
+                        // Set secure permissions (0o600 - only owner can read/write)
+                        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logFileURL.path)
+                    } catch {
+                        // Silently fail - don't crash app if logging fails
+                    }
                 }
             } else {
-                try? data.write(to: logFileURL, options: [.atomic, .completeFileProtection])
-                // Set secure permissions (0o600 - only owner can read/write)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logFileURL.path)
+                do {
+                    try data.write(to: logFileURL, options: [.atomic, .completeFileProtection])
+                    // Set secure permissions (0o600 - only owner can read/write)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logFileURL.path)
+                } catch {
+                    // Silently fail - don't crash app if logging fails
+                }
             }
         }
     }
@@ -221,6 +229,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let image = NSImage(size: size)
         
         image.lockFocus()
+        defer { image.unlockFocus() }  // CRITICAL: Always unlock, even if drawing fails
         
         // Draw rounded square background
         let rect = NSRect(x: 2, y: 2, width: 14, height: 14)
@@ -244,7 +253,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         )
         letter.draw(in: letterRect, withAttributes: attrs)
         
-        image.unlockFocus()
         return image
     }
     
@@ -511,7 +519,8 @@ class KeyEventMonitor: ObservableObject {
         DispatchQueue.main.async {
             self.keyEvents.insert(keyEvent, at: 0)
             if self.keyEvents.count > self.maxEvents {
-                self.keyEvents.removeLast()
+                // Remove excess events and reclaim memory
+                self.keyEvents.removeLast(self.keyEvents.count - self.maxEvents)
             }
         }
     }
@@ -533,7 +542,7 @@ class KeyEventMonitor: ObservableObject {
     }
     
     func clearEvents() {
-        keyEvents.removeAll()
+        keyEvents.removeAll(keepingCapacity: false) // Reclaim memory
     }
     
     deinit {
@@ -565,6 +574,78 @@ struct NavigationAction: Identifiable, Codable, Hashable {
         self.modifiers = modifiers
     }
     
+    // Localized display name for UI
+    var localizedName: String {
+        // Extract action type from English name for localization
+        // Keep symbols (⌘, ⌥, ⇧, etc.) and only translate the text part
+        if name.contains("Discard") {
+            return L10n.current.actionDiscard
+        } else if name.contains("Line start") {
+            return "⌘← " + L10n.current.actionLineStart
+        } else if name.contains("Line end") {
+            return "⌘→ " + L10n.current.actionLineEnd
+        } else if name.contains("Select to line start") {
+            return "⇧⌘← " + L10n.current.actionSelectLineStart
+        } else if name.contains("Select to line end") {
+            return "⇧⌘→ " + L10n.current.actionSelectLineEnd
+        } else if name.contains("Document start") {
+            return "⌘↑ " + L10n.current.actionDocStart
+        } else if name.contains("Document end") {
+            return "⌘↓ " + L10n.current.actionDocEnd
+        } else if name.contains("Select to doc start") {
+            return "⇧⌘↑ " + L10n.current.actionSelectDocStart
+        } else if name.contains("Select to doc end") {
+            return "⇧⌘↓ " + L10n.current.actionSelectDocEnd
+        } else if name.contains("Word start") && !name.contains("Select") {
+            return "⌥← " + L10n.current.actionWordStart
+        } else if name.contains("Word end") && !name.contains("Select") {
+            return "⌥→ " + L10n.current.actionWordEnd
+        } else if name.contains("Select to word start") {
+            return "⇧⌥← " + L10n.current.actionSelectWordStart
+        } else if name.contains("Select to word end") {
+            return "⇧⌥→ " + L10n.current.actionSelectWordEnd
+        } else if name.contains("Delete word left") {
+            return "⌥⌫ " + L10n.current.actionDeleteWordLeft
+        } else if name.contains("Delete word right") {
+            return "⌥Del " + L10n.current.actionDeleteWordRight
+        } else if name.contains("Delete to line start") {
+            return "⌘⌫ " + L10n.current.actionDeleteLineStart
+        } else if name.contains("Page Up") {
+            return "⌥↑ " + L10n.current.actionPageUp
+        } else if name.contains("Page Down") {
+            return "⌥↓ " + L10n.current.actionPageDown
+        } else if name.contains("Undo") {
+            return "⌘Z " + L10n.current.actionUndo
+        } else if name.contains("Redo") {
+            return "⇧⌘Z " + L10n.current.actionRedo
+        } else if name.contains("Cut") {
+            return "⌘X " + L10n.current.actionCut
+        } else if name.contains("Copy") {
+            return "⌘C " + L10n.current.actionCopy
+        } else if name.contains("Paste") {
+            return "⌘V " + L10n.current.actionPaste
+        } else if name.contains("Select All") {
+            return "⌘A " + L10n.current.actionSelectAll
+        } else if name.contains("Find Next") {
+            return "⌘G " + L10n.current.actionFindNext
+        } else if name.contains("Find") {
+            return "⌘F " + L10n.current.actionFind
+        } else if name.contains("Save As") {
+            return "⇧⌘S " + L10n.current.actionSaveAs
+        } else if name.contains("Save") {
+            return "⌘S " + L10n.current.actionSave
+        } else if name.contains("Close Window") {
+            return "⌘W " + L10n.current.actionCloseWindow
+        } else if name.contains("Quit") {
+            return "⌘Q " + L10n.current.actionQuit
+        } else if name.contains("New Window") {
+            return "⌘N " + L10n.current.actionNewWindow
+        } else if name.contains("New Tab") {
+            return "⌘T " + L10n.current.actionNewTab
+        }
+        return name // Fallback to English name
+    }
+    
     // Hashable conformance
     static func == (lhs: NavigationAction, rhs: NavigationAction) -> Bool {
         lhs.id == rhs.id
@@ -592,6 +673,64 @@ struct NavigationAction: Identifiable, Codable, Hashable {
         try container.encode(key, forKey: .key)
         try container.encode(modifiers.rawValue, forKey: .modifiers)
     }
+}
+
+// MARK: - NavigationAction Extension
+extension NavigationAction {
+    // Predefined navigation actions - optimized for Windows switchers
+    static let all: [NavigationAction] = [
+        // === SPECIAL (block key - targetKeyCode 0 with no modifiers means discard) ===
+        NavigationAction(name: "🚫 Discard (block key)", key: 0, modifiers: []),
+        
+        // === LINE NAVIGATION (replaces Home/End) ===
+        NavigationAction(name: "⌘← Line start", key: 123, modifiers: .maskCommand),
+        NavigationAction(name: "⌘→ Line end", key: 124, modifiers: .maskCommand),
+        NavigationAction(name: "⇧⌘← Select to line start", key: 123, modifiers: [.maskCommand, .maskShift]),
+        NavigationAction(name: "⇧⌘→ Select to line end", key: 124, modifiers: [.maskCommand, .maskShift]),
+        
+        // === DOCUMENT NAVIGATION (replaces Ctrl+Home/End) ===
+        NavigationAction(name: "⌘↑ Document start", key: 126, modifiers: .maskCommand),
+        NavigationAction(name: "⌘↓ Document end", key: 125, modifiers: .maskCommand),
+        NavigationAction(name: "⇧⌘↑ Select to doc start", key: 126, modifiers: [.maskCommand, .maskShift]),
+        NavigationAction(name: "⇧⌘↓ Select to doc end", key: 125, modifiers: [.maskCommand, .maskShift]),
+        
+        // === WORD NAVIGATION (replaces Ctrl+Left/Right) ===
+        NavigationAction(name: "⌥← Word start", key: 123, modifiers: .maskAlternate),
+        NavigationAction(name: "⌥→ Word end", key: 124, modifiers: .maskAlternate),
+        NavigationAction(name: "⇧⌥← Select to word start", key: 123, modifiers: [.maskAlternate, .maskShift]),
+        NavigationAction(name: "⇧⌥→ Select to word end", key: 124, modifiers: [.maskAlternate, .maskShift]),
+        
+        // === DELETE (replaces Ctrl+Backspace/Delete) ===
+        NavigationAction(name: "⌥⌫ Delete word left", key: 51, modifiers: .maskAlternate),
+        NavigationAction(name: "⌥Del Delete word right", key: 117, modifiers: .maskAlternate),
+        NavigationAction(name: "⌘⌫ Delete to line start", key: 51, modifiers: .maskCommand),
+        
+        // === PAGE NAVIGATION ===
+        NavigationAction(name: "⌥↑ Page Up", key: 126, modifiers: .maskAlternate),
+        NavigationAction(name: "⌥↓ Page Down", key: 125, modifiers: .maskAlternate),
+        
+        // === UNDO/REDO (replaces Ctrl+Z/Y) ===
+        NavigationAction(name: "⌘Z Undo", key: 6, modifiers: .maskCommand),
+        NavigationAction(name: "⇧⌘Z Redo", key: 6, modifiers: [.maskCommand, .maskShift]),
+        
+        // === CLIPBOARD (replaces Ctrl+X/C/V) ===
+        NavigationAction(name: "⌘X Cut", key: 7, modifiers: .maskCommand),
+        NavigationAction(name: "⌘C Copy", key: 8, modifiers: .maskCommand),
+        NavigationAction(name: "⌘V Paste", key: 9, modifiers: .maskCommand),
+        NavigationAction(name: "⌘A Select All", key: 0, modifiers: .maskCommand),
+        
+        // === FIND/SAVE ===
+        NavigationAction(name: "⌘F Find", key: 3, modifiers: .maskCommand),
+        NavigationAction(name: "⌘G Find Next", key: 5, modifiers: .maskCommand),
+        NavigationAction(name: "⌘S Save", key: 1, modifiers: .maskCommand),
+        NavigationAction(name: "⇧⌘S Save As", key: 1, modifiers: [.maskCommand, .maskShift]),
+        
+        // === WINDOW MANAGEMENT ===
+        NavigationAction(name: "⌘W Close Window/Tab", key: 13, modifiers: .maskCommand),
+        NavigationAction(name: "⌘Q Quit", key: 12, modifiers: .maskCommand),
+        NavigationAction(name: "⌘N New Window/Document", key: 45, modifiers: .maskCommand),
+        NavigationAction(name: "⌘T New Tab", key: 17, modifiers: .maskCommand),
+    ]
 }
 
 struct KeyMappingRule: Identifiable, Codable {
@@ -685,61 +824,6 @@ class KeyMappingManager: ObservableObject {
     // - mappings[] is JSON-encoded into UserDefaults on every change (didSet)
     // - keep the structure stable for backwards compatibility (Codable)
     
-    // Predefined navigation actions - optimized for Windows switchers
-    static let navigationActions: [NavigationAction] = [
-        // === SPECIAL ===
-        NavigationAction(name: "🚫 Discard (block key)", key: 0, modifiers: []),  // keyCode 0 + no modifiers = discard
-        
-        // === LINE NAVIGATION (replaces Home/End) ===
-        NavigationAction(name: "⌘← Line start", key: 123, modifiers: .maskCommand),
-        NavigationAction(name: "⌘→ Line end", key: 124, modifiers: .maskCommand),
-        NavigationAction(name: "⇧⌘← Select to line start", key: 123, modifiers: [.maskCommand, .maskShift]),
-        NavigationAction(name: "⇧⌘→ Select to line end", key: 124, modifiers: [.maskCommand, .maskShift]),
-        
-        // === DOCUMENT NAVIGATION (replaces Ctrl+Home/End) ===
-        NavigationAction(name: "⌘↑ Document start", key: 126, modifiers: .maskCommand),
-        NavigationAction(name: "⌘↓ Document end", key: 125, modifiers: .maskCommand),
-        NavigationAction(name: "⇧⌘↑ Select to doc start", key: 126, modifiers: [.maskCommand, .maskShift]),
-        NavigationAction(name: "⇧⌘↓ Select to doc end", key: 125, modifiers: [.maskCommand, .maskShift]),
-        
-        // === WORD NAVIGATION (replaces Ctrl+Left/Right) ===
-        NavigationAction(name: "⌥← Word start", key: 123, modifiers: .maskAlternate),
-        NavigationAction(name: "⌥→ Word end", key: 124, modifiers: .maskAlternate),
-        NavigationAction(name: "⇧⌥← Select to word start", key: 123, modifiers: [.maskAlternate, .maskShift]),
-        NavigationAction(name: "⇧⌥→ Select to word end", key: 124, modifiers: [.maskAlternate, .maskShift]),
-        
-        // === DELETE (replaces Ctrl+Backspace/Delete) ===
-        NavigationAction(name: "⌥⌫ Delete word left", key: 51, modifiers: .maskAlternate),
-        NavigationAction(name: "⌥Del Delete word right", key: 117, modifiers: .maskAlternate),
-        NavigationAction(name: "⌘⌫ Delete to line start", key: 51, modifiers: .maskCommand),
-        
-        // === PAGE NAVIGATION ===
-        NavigationAction(name: "⌥↑ Page Up", key: 126, modifiers: .maskAlternate),
-        NavigationAction(name: "⌥↓ Page Down", key: 125, modifiers: .maskAlternate),
-        
-        // === UNDO/REDO (replaces Ctrl+Z/Y) ===
-        NavigationAction(name: "⌘Z Undo", key: 6, modifiers: .maskCommand),
-        NavigationAction(name: "⇧⌘Z Redo", key: 6, modifiers: [.maskCommand, .maskShift]),
-        
-        // === CLIPBOARD (replaces Ctrl+X/C/V) ===
-        NavigationAction(name: "⌘X Cut", key: 7, modifiers: .maskCommand),
-        NavigationAction(name: "⌘C Copy", key: 8, modifiers: .maskCommand),
-        NavigationAction(name: "⌘V Paste", key: 9, modifiers: .maskCommand),
-        NavigationAction(name: "⌘A Select All", key: 0, modifiers: .maskCommand),
-        
-        // === FIND/SAVE ===
-        NavigationAction(name: "⌘F Find", key: 3, modifiers: .maskCommand),
-        NavigationAction(name: "⌘G Find Next", key: 5, modifiers: .maskCommand),
-        NavigationAction(name: "⌘S Save", key: 1, modifiers: .maskCommand),
-        NavigationAction(name: "⇧⌘S Save As", key: 1, modifiers: [.maskCommand, .maskShift]),
-        
-        // === WINDOW MANAGEMENT ===
-        NavigationAction(name: "⌘W Close Window/Tab", key: 13, modifiers: .maskCommand),
-        NavigationAction(name: "⌘Q Quit", key: 12, modifiers: .maskCommand),
-        NavigationAction(name: "⌘N New Window/Document", key: 45, modifiers: .maskCommand),
-        NavigationAction(name: "⌘T New Tab", key: 17, modifiers: .maskCommand),
-    ]
-    
     init() {
         loadMappings()
     }
@@ -768,17 +852,44 @@ class KeyMappingManager: ObservableObject {
     }
     
     private func saveMappings() {
+        // JSON encoding for ~20 mappings is <1ms - no need for background queue
+        // Background queue would add overhead and potential race conditions
         if let encoded = try? JSONEncoder().encode(mappings) {
             UserDefaults.standard.set(encoded, forKey: userDefaultsKey)
         }
     }
     
     private func loadMappings() {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
-              let decoded = try? JSONDecoder().decode([KeyMappingRule].self, from: data) else {
+        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey) else {
             return
         }
-        mappings = decoded
+        
+        do {
+            let decoded = try JSONDecoder().decode([KeyMappingRule].self, from: data)
+            // Validate loaded mappings - filter out any corrupted entries
+            let validMappings = decoded.filter { mapping in
+                // Basic validation: key codes should be reasonable (0-255 for most keys)
+                // and names should not be empty
+                return !mapping.sourceKeyName.isEmpty && 
+                       mapping.sourceKeyCode <= 255 &&
+                       mapping.targetKeyCode <= 255
+            }
+            mappings = validMappings
+            
+            // Log if any mappings were filtered out
+            if validMappings.count != decoded.count {
+                #if DEBUG
+                print("⚠️ Filtered out \(decoded.count - validMappings.count) invalid mapping(s) from UserDefaults")
+                #endif
+            }
+        } catch {
+            // Corrupted data - log and start fresh
+            #if DEBUG
+            print("❌ Failed to decode mappings from UserDefaults: \(error.localizedDescription)")
+            #endif
+            // Don't crash - just start with empty mappings
+            mappings = []
+        }
     }
 }
 
@@ -806,6 +917,10 @@ class RunningAppsManager: ObservableObject {
         DispatchQueue.main.async {
             self.runningApps = apps
         }
+    }
+    
+    deinit {
+        // No resources to clean up currently, but good practice to have deinit
     }
 }
 
@@ -919,7 +1034,13 @@ struct StatusBar: View {
     
     func openAccessibilitySettings() {
         // Open System Settings to Accessibility
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            // Fallback: try opening general Security & Privacy pane
+            if let fallbackUrl = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
+                NSWorkspace.shared.open(fallbackUrl)
+            }
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 }
@@ -994,9 +1115,8 @@ struct SettingsView: View {
                 // Support Section - Centered, prominent, no extra text
                 VStack(spacing: 12) {
                     Button(action: {
-                        if let url = URL(string: "https://buymeacoffee.com/badcode64") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        guard let url = URL(string: "https://buymeacoffee.com/badcode64") else { return }
+                        NSWorkspace.shared.open(url)
                     }) {
                         HStack(spacing: 8) {
                             Image(systemName: "cup.and.saucer.fill")
@@ -1205,6 +1325,7 @@ struct MappingRow: View {
     let mapping: KeyMappingRule
     @ObservedObject var manager: KeyMappingManager
     @Binding var editingMapping: KeyMappingRule?
+    @ObservedObject private var l10n = L10n.shared  // For language change updates
     
     var body: some View {
         HStack(spacing: 12) {
@@ -1245,7 +1366,7 @@ struct MappingRow: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.purple)
                 }
-                Text(displayKeyName(mapping.targetKeyName, keyCode: mapping.targetKeyCode))
+                Text(localizedTargetName(mapping))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
             }
             .padding(.horizontal, 10)
@@ -1302,6 +1423,20 @@ struct MappingRow: View {
             return name.components(separatedBy: " + ").last ?? name
         }
         return name
+    }
+    
+    private func localizedTargetName(_ mapping: KeyMappingRule) -> String {
+        // For navigation type, find action by keyCode and modifiers (language-independent)
+        if mapping.type == .navigation {
+            if let action = NavigationAction.all.first(where: { 
+                $0.key == mapping.targetKeyCode && 
+                $0.modifiers == mapping.targetModifiers 
+            }) {
+                return action.localizedName
+            }
+        }
+        // Otherwise use standard display logic for simple key mappings
+        return displayKeyName(mapping.targetKeyName, keyCode: mapping.targetKeyCode)
     }
 }
 
@@ -1512,8 +1647,8 @@ struct AddMappingSheet: View {
                             
                             Picker("", selection: $selectedNavigationAction) {
                                 Text(L10n.current.select).tag(nil as NavigationAction?)
-                                ForEach(KeyMappingManager.navigationActions) { action in
-                                    Text(action.name).tag(action as NavigationAction?)
+                                ForEach(NavigationAction.all) { action in
+                                    Text(action.localizedName).tag(action as NavigationAction?)
                                 }
                             }
                             .labelsHidden()
@@ -1656,7 +1791,7 @@ struct AddMappingSheet: View {
                 selectedAppBundleIDs = Set(mapping.filteredApps)
                 
                 if mapping.type == .navigation {
-                    selectedNavigationAction = KeyMappingManager.navigationActions.first { 
+                    selectedNavigationAction = NavigationAction.all.first { 
                         $0.key == mapping.targetKeyCode 
                     }
                 }
@@ -1778,7 +1913,6 @@ struct AddMappingSheet: View {
         if flags.contains(.shift) { cgFlags.insert(.maskShift) }
         return cgFlags.isEmpty ? nil : cgFlags
     }
-    
 }
 
 // MARK: - Key Event Row
@@ -1896,7 +2030,11 @@ class KeyRemapper {
             options: .defaultTap,
             eventsOfInterest: CGEventMask(eventMask),
             callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
-                let remapper = Unmanaged<KeyRemapper>.fromOpaque(refcon!).takeUnretainedValue()
+                // Safety check: refcon should never be nil, but guard against it
+                guard let refcon = refcon else {
+                    return Unmanaged.passRetained(event)
+                }
+                let remapper = Unmanaged<KeyRemapper>.fromOpaque(refcon).takeUnretainedValue()
                 return remapper.handleEvent(proxy: proxy, type: type, event: event)
             },
             userInfo: Unmanaged.passUnretained(self).toOpaque()
@@ -1984,8 +2122,23 @@ class KeyRemapper {
     
     private func handleKeyMapping(keyCode: UInt16, eventFlags: CGEventFlags, isKeyDown: Bool) -> Unmanaged<CGEvent>? {
         // Get enabled mappings from manager
-        guard let mappings = mappingManager?.mappings.filter({ $0.isEnabled }) else {
-            // Create pass-through event
+        // IMPORTANT: Copy mappings array to avoid race conditions since CGEventTap callback
+        // runs on a different thread than main thread where mappings may be modified.
+        // The filter operation creates a new array, providing thread-safety for iteration.
+        guard let manager = mappingManager else {
+            // No manager - create pass-through event
+            guard let passThroughEvent = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: isKeyDown) else {
+                return nil
+            }
+            passThroughEvent.flags = eventFlags
+            return Unmanaged.passRetained(passThroughEvent)
+        }
+        
+        // Create a snapshot: filter() returns a new array, safe to iterate even if original changes
+        let mappings = manager.mappings.filter({ $0.isEnabled })
+        
+        if mappings.isEmpty {
+            // No enabled mappings - create pass-through event
             guard let passThroughEvent = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: isKeyDown) else {
                 return nil
             }

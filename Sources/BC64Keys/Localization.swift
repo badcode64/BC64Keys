@@ -418,5 +418,295 @@ class L10n: ObservableObject {
             "fi": "Avaa sovellus lisätäksesi sen luetteloon", "pl": "Otwórz aplikację, aby dodać ją do listy", "cs": "Otevřete aplikaci a přidejte ji do seznamu", "sk": "Otvorte aplikáciu, aby ste ju pridali do zoznamu",
             "ro": "Deschideți aplicația pentru a o adăuga la listă", "el": "Ανοίξτε την εφαρμογή για να την προσθέσετε στη λίστα", "ko": "목록에 추가하려면 응용 프로그램을 여세요", "ar": "افتح التطبيق لإضافته إلى القائمة", "he": "פתח את היישום כדי להוסיף אותו לרשימה", "tr": "Listeye eklemek için uygulamayı açın"])
     }
+    
+    // MARK: - Navigation Actions
+    var actionDiscard: String {
+        tr(["en": "🚫 Discard (block key)", "hu": "🚫 Elvetés (billentyű letiltása)", 
+            "de": "🚫 Verwerfen (Taste blockieren)", "fr": "🚫 Ignorer (bloquer touche)",
+            "es": "🚫 Descartar (bloquear tecla)", "it": "🚫 Scarta (blocca tasto)",
+            "ja": "🚫 破棄（キーをブロック）", "zh": "🚫 丢弃（阻止按键）",
+            "nl": "🚫 Negeren (toets blokkeren)", "pt": "🚫 Descartar (bloquear tecla)",
+            "sv": "🚫 Ignorera (blockera tangent)", "pl": "🚫 Odrzuć (zablokuj klawisz)",
+            "ko": "🚫 버리기 (키 차단)", "tr": "🚫 At (tuşu engelle)"])
+    }
+    var actionLineStart: String {
+        tr(["en": "Line start", "hu": "Sor elejére",
+            "de": "Zeilenanfang", "fr": "Début de ligne",
+            "es": "Inicio de línea", "it": "Inizio riga",
+            "ja": "行頭", "zh": "行首",
+            "nl": "Regelbegin", "pt": "Início da linha",
+            "sv": "Radens början", "pl": "Początek linii",
+            "ko": "줄 시작", "tr": "Satır başı"])
+    }
+    var actionLineEnd: String {
+        tr(["en": "Line end", "hu": "Sor végére",
+            "de": "Zeilenende", "fr": "Fin de ligne",
+            "es": "Fin de línea", "it": "Fine riga",
+            "ja": "行末", "zh": "行尾",
+            "nl": "Regeleinde", "pt": "Fim da linha",
+            "sv": "Radens slut", "pl": "Koniec linii",
+            "ko": "줄 끝", "tr": "Satır sonu"])
+    }
+    var actionSelectLineStart: String {
+        tr(["en": "Select to line start", "hu": "Kijelölés a sor elejéig",
+            "de": "Bis Zeilenanfang auswählen", "fr": "Sélectionner jusqu'au début",
+            "es": "Seleccionar hasta inicio", "it": "Seleziona fino a inizio",
+            "ja": "行頭まで選択", "zh": "选择到行首",
+            "nl": "Selecteer tot regelbegin", "pt": "Selecionar até início",
+            "sv": "Markera till radens början", "pl": "Zaznacz do początku",
+            "ko": "줄 시작까지 선택", "tr": "Satır başına kadar seç"])
+    }
+    var actionSelectLineEnd: String {
+        tr(["en": "Select to line end", "hu": "Kijelölés a sor végéig",
+            "de": "Bis Zeilenende auswählen", "fr": "Sélectionner jusqu'à la fin",
+            "es": "Seleccionar hasta fin", "it": "Seleziona fino a fine",
+            "ja": "行末まで選択", "zh": "选择到行尾",
+            "nl": "Selecteer tot regeleinde", "pt": "Selecionar até fim",
+            "sv": "Markera till radens slut", "pl": "Zaznacz do końca",
+            "ko": "줄 끝까지 선택", "tr": "Satır sonuna kadar seç"])
+    }
+    var actionDocStart: String {
+        tr(["en": "Document start", "hu": "Dokumentum elejére",
+            "de": "Dokumentanfang", "fr": "Début du document",
+            "es": "Inicio del documento", "it": "Inizio documento",
+            "ja": "文書の先頭", "zh": "文档开头",
+            "nl": "Documentbegin", "pt": "Início do documento",
+            "sv": "Dokumentets början", "pl": "Początek dokumentu",
+            "ko": "문서 시작", "tr": "Belge başı"])
+    }
+    var actionDocEnd: String {
+        tr(["en": "Document end", "hu": "Dokumentum végére",
+            "de": "Dokumentende", "fr": "Fin du document",
+            "es": "Fin del documento", "it": "Fine documento",
+            "ja": "文書の末尾", "zh": "文档结尾",
+            "nl": "Documenteinde", "pt": "Fim do documento",
+            "sv": "Dokumentets slut", "pl": "Koniec dokumentu",
+            "ko": "문서 끝", "tr": "Belge sonu"])
+    }
+    var actionSelectDocStart: String {
+        tr(["en": "Select to doc start", "hu": "Kijelölés a dokumentum elejéig",
+            "de": "Bis Dokumentanfang auswählen", "fr": "Sélectionner jusqu'au début du doc",
+            "es": "Seleccionar hasta inicio doc", "it": "Seleziona fino a inizio doc",
+            "ja": "文書の先頭まで選択", "zh": "选择到文档开头",
+            "nl": "Selecteer tot documentbegin", "pt": "Selecionar até início doc",
+            "sv": "Markera till dokumentets början", "pl": "Zaznacz do początku dok.",
+            "ko": "문서 시작까지 선택", "tr": "Belge başına kadar seç"])
+    }
+    var actionSelectDocEnd: String {
+        tr(["en": "Select to doc end", "hu": "Kijelölés a dokumentum végéig",
+            "de": "Bis Dokumentende auswählen", "fr": "Sélectionner jusqu'à la fin du doc",
+            "es": "Seleccionar hasta fin doc", "it": "Seleziona fino a fine doc",
+            "ja": "文書の末尾まで選択", "zh": "选择到文档结尾",
+            "nl": "Selecteer tot documenteinde", "pt": "Selecionar até fim doc",
+            "sv": "Markera till dokumentets slut", "pl": "Zaznacz do końca dok.",
+            "ko": "문서 끝까지 선택", "tr": "Belge sonuna kadar seç"])
+    }
+    var actionWordStart: String {
+        tr(["en": "Word start", "hu": "Szó elejére",
+            "de": "Wortanfang", "fr": "Début du mot",
+            "es": "Inicio de palabra", "it": "Inizio parola",
+            "ja": "単語の先頭", "zh": "词首",
+            "nl": "Woordbegin", "pt": "Início da palavra",
+            "sv": "Ordets början", "pl": "Początek słowa",
+            "ko": "단어 시작", "tr": "Kelime başı"])
+    }
+    var actionWordEnd: String {
+        tr(["en": "Word end", "hu": "Szó végére",
+            "de": "Wortende", "fr": "Fin du mot",
+            "es": "Fin de palabra", "it": "Fine parola",
+            "ja": "単語の末尾", "zh": "词尾",
+            "nl": "Woordeinde", "pt": "Fim da palavra",
+            "sv": "Ordets slut", "pl": "Koniec słowa",
+            "ko": "단어 끝", "tr": "Kelime sonu"])
+    }
+    var actionSelectWordStart: String {
+        tr(["en": "Select to word start", "hu": "Kijelölés a szó elejéig",
+            "de": "Bis Wortanfang auswählen", "fr": "Sélectionner jusqu'au début du mot",
+            "es": "Seleccionar hasta inicio palabra", "it": "Seleziona fino a inizio parola",
+            "ja": "単語の先頭まで選択", "zh": "选择到词首",
+            "nl": "Selecteer tot woordbegin", "pt": "Selecionar até início palavra",
+            "sv": "Markera till ordets början", "pl": "Zaznacz do początku słowa",
+            "ko": "단어 시작까지 선택", "tr": "Kelime başına kadar seç"])
+    }
+    var actionSelectWordEnd: String {
+        tr(["en": "Select to word end", "hu": "Kijelölés a szó végéig",
+            "de": "Bis Wortende auswählen", "fr": "Sélectionner jusqu'à la fin du mot",
+            "es": "Seleccionar hasta fin palabra", "it": "Seleziona fino a fine parola",
+            "ja": "単語の末尾まで選択", "zh": "选择到词尾",
+            "nl": "Selecteer tot woordeinde", "pt": "Selecionar até fim palavra",
+            "sv": "Markera till ordets slut", "pl": "Zaznacz do końca słowa",
+            "ko": "단어 끝까지 선택", "tr": "Kelime sonuna kadar seç"])
+    }
+    var actionDeleteWordLeft: String {
+        tr(["en": "Delete word left", "hu": "Szó törlése balra",
+            "de": "Wort links löschen", "fr": "Supprimer mot à gauche",
+            "es": "Eliminar palabra izquierda", "it": "Elimina parola sinistra",
+            "ja": "左の単語を削除", "zh": "删除左边单词",
+            "nl": "Woord links verwijderen", "pt": "Apagar palavra esquerda",
+            "sv": "Radera ord vänster", "pl": "Usuń słowo w lewo",
+            "ko": "왼쪽 단어 삭제", "tr": "Sol kelimeyi sil"])
+    }
+    var actionDeleteWordRight: String {
+        tr(["en": "Delete word right", "hu": "Szó törlése jobbra",
+            "de": "Wort rechts löschen", "fr": "Supprimer mot à droite",
+            "es": "Eliminar palabra derecha", "it": "Elimina parola destra",
+            "ja": "右の単語を削除", "zh": "删除右边单词",
+            "nl": "Woord rechts verwijderen", "pt": "Apagar palavra direita",
+            "sv": "Radera ord höger", "pl": "Usuń słowo w prawo",
+            "ko": "오른쪽 단어 삭제", "tr": "Sağ kelimeyi sil"])
+    }
+    var actionDeleteLineStart: String {
+        tr(["en": "Delete to line start", "hu": "Törlés a sor elejéig",
+            "de": "Bis Zeilenanfang löschen", "fr": "Supprimer jusqu'au début de ligne",
+            "es": "Eliminar hasta inicio línea", "it": "Elimina fino a inizio riga",
+            "ja": "行頭まで削除", "zh": "删除到行首",
+            "nl": "Verwijder tot regelbegin", "pt": "Apagar até início da linha",
+            "sv": "Radera till radens början", "pl": "Usuń do początku linii",
+            "ko": "줄 시작까지 삭제", "tr": "Satır başına kadar sil"])
+    }
+    var actionPageUp: String {
+        tr(["en": "Page Up", "hu": "Lap fel",
+            "de": "Seite hoch", "fr": "Page haut",
+            "es": "Página arriba", "it": "Pagina su",
+            "ja": "ページアップ", "zh": "向上翻页",
+            "nl": "Pagina omhoog", "pt": "Página acima",
+            "sv": "Sida upp", "pl": "Strona w górę",
+            "ko": "페이지 위로", "tr": "Sayfa yukarı"])
+    }
+    var actionPageDown: String {
+        tr(["en": "Page Down", "hu": "Lap le",
+            "de": "Seite runter", "fr": "Page bas",
+            "es": "Página abajo", "it": "Pagina giù",
+            "ja": "ページダウン", "zh": "向下翻页",
+            "nl": "Pagina omlaag", "pt": "Página abaixo",
+            "sv": "Sida ner", "pl": "Strona w dół",
+            "ko": "페이지 아래로", "tr": "Sayfa aşağı"])
+    }
+    var actionUndo: String {
+        tr(["en": "Undo", "hu": "Visszavonás",
+            "de": "Rückgängig", "fr": "Annuler",
+            "es": "Deshacer", "it": "Annulla",
+            "ja": "元に戻す", "zh": "撤销",
+            "nl": "Ongedaan maken", "pt": "Desfazer",
+            "sv": "Ångra", "pl": "Cofnij",
+            "ko": "실행 취소", "tr": "Geri al"])
+    }
+    var actionRedo: String {
+        tr(["en": "Redo", "hu": "Újra",
+            "de": "Wiederholen", "fr": "Rétablir",
+            "es": "Rehacer", "it": "Ripeti",
+            "ja": "やり直す", "zh": "重做",
+            "nl": "Opnieuw", "pt": "Refazer",
+            "sv": "Gör om", "pl": "Ponów",
+            "ko": "다시 실행", "tr": "Yinele"])
+    }
+    var actionCut: String {
+        tr(["en": "Cut", "hu": "Kivágás",
+            "de": "Ausschneiden", "fr": "Couper",
+            "es": "Cortar", "it": "Taglia",
+            "ja": "切り取り", "zh": "剪切",
+            "nl": "Knippen", "pt": "Cortar",
+            "sv": "Klipp ut", "pl": "Wytnij",
+            "ko": "잘라내기", "tr": "Kes"])
+    }
+    var actionCopy: String {
+        tr(["en": "Copy", "hu": "Másolás",
+            "de": "Kopieren", "fr": "Copier",
+            "es": "Copiar", "it": "Copia",
+            "ja": "コピー", "zh": "复制",
+            "nl": "Kopiëren", "pt": "Copiar",
+            "sv": "Kopiera", "pl": "Kopiuj",
+            "ko": "복사", "tr": "Kopyala"])
+    }
+    var actionPaste: String {
+        tr(["en": "Paste", "hu": "Beillesztés",
+            "de": "Einfügen", "fr": "Coller",
+            "es": "Pegar", "it": "Incolla",
+            "ja": "貼り付け", "zh": "粘贴",
+            "nl": "Plakken", "pt": "Colar",
+            "sv": "Klistra in", "pl": "Wklej",
+            "ko": "붙여넣기", "tr": "Yapıştır"])
+    }
+    var actionSelectAll: String {
+        tr(["en": "Select All", "hu": "Összes kijelölése",
+            "de": "Alles auswählen", "fr": "Tout sélectionner",
+            "es": "Seleccionar todo", "it": "Seleziona tutto",
+            "ja": "すべて選択", "zh": "全选",
+            "nl": "Alles selecteren", "pt": "Selecionar tudo",
+            "sv": "Markera allt", "pl": "Zaznacz wszystko",
+            "ko": "모두 선택", "tr": "Tümünü seç"])
+    }
+    var actionFind: String {
+        tr(["en": "Find", "hu": "Keresés",
+            "de": "Suchen", "fr": "Rechercher",
+            "es": "Buscar", "it": "Trova",
+            "ja": "検索", "zh": "查找",
+            "nl": "Zoeken", "pt": "Procurar",
+            "sv": "Sök", "pl": "Znajdź",
+            "ko": "찾기", "tr": "Bul"])
+    }
+    var actionFindNext: String {
+        tr(["en": "Find Next", "hu": "Következő keresése",
+            "de": "Weitersuchen", "fr": "Rechercher suivant",
+            "es": "Buscar siguiente", "it": "Trova successivo",
+            "ja": "次を検索", "zh": "查找下一个",
+            "nl": "Volgende zoeken", "pt": "Procurar próximo",
+            "sv": "Sök nästa", "pl": "Znajdź następny",
+            "ko": "다음 찾기", "tr": "Sonrakini bul"])
+    }
+    var actionSave: String {
+        tr(["en": "Save", "hu": "Mentés",
+            "de": "Speichern", "fr": "Enregistrer",
+            "es": "Guardar", "it": "Salva",
+            "ja": "保存", "zh": "保存",
+            "nl": "Opslaan", "pt": "Salvar",
+            "sv": "Spara", "pl": "Zapisz",
+            "ko": "저장", "tr": "Kaydet"])
+    }
+    var actionSaveAs: String {
+        tr(["en": "Save As", "hu": "Mentés másként",
+            "de": "Speichern unter", "fr": "Enregistrer sous",
+            "es": "Guardar como", "it": "Salva come",
+            "ja": "名前を付けて保存", "zh": "另存为",
+            "nl": "Opslaan als", "pt": "Salvar como",
+            "sv": "Spara som", "pl": "Zapisz jako",
+            "ko": "다른 이름으로 저장", "tr": "Farklı kaydet"])
+    }
+    var actionCloseWindow: String {
+        tr(["en": "Close Window/Tab", "hu": "Ablak/Fül bezárása",
+            "de": "Fenster/Tab schließen", "fr": "Fermer fenêtre/onglet",
+            "es": "Cerrar ventana/pestaña", "it": "Chiudi finestra/scheda",
+            "ja": "ウィンドウ/タブを閉じる", "zh": "关闭窗口/标签",
+            "nl": "Venster/tab sluiten", "pt": "Fechar janela/aba",
+            "sv": "Stäng fönster/flik", "pl": "Zamknij okno/kartę",
+            "ko": "창/탭 닫기", "tr": "Pencere/sekme kapat"])
+    }
+    var actionQuit: String {
+        tr(["en": "Quit", "hu": "Kilépés",
+            "de": "Beenden", "fr": "Quitter",
+            "es": "Salir", "it": "Esci",
+            "ja": "終了", "zh": "退出",
+            "nl": "Afsluiten", "pt": "Sair",
+            "sv": "Avsluta", "pl": "Zakończ",
+            "ko": "종료", "tr": "Çık"])
+    }
+    var actionNewWindow: String {
+        tr(["en": "New Window/Document", "hu": "Új ablak/dokumentum",
+            "de": "Neues Fenster/Dokument", "fr": "Nouvelle fenêtre/document",
+            "es": "Nueva ventana/documento", "it": "Nuova finestra/documento",
+            "ja": "新規ウィンドウ/文書", "zh": "新窗口/文档",
+            "nl": "Nieuw venster/document", "pt": "Nova janela/documento",
+            "sv": "Nytt fönster/dokument", "pl": "Nowe okno/dokument",
+            "ko": "새 창/문서", "tr": "Yeni pencere/belge"])
+    }
+    var actionNewTab: String {
+        tr(["en": "New Tab", "hu": "Új fül",
+            "de": "Neuer Tab", "fr": "Nouvel onglet",
+            "es": "Nueva pestaña", "it": "Nuova scheda",
+            "ja": "新規タブ", "zh": "新标签",
+            "nl": "Nieuw tabblad", "pt": "Nova aba",
+            "sv": "Ny flik", "pl": "Nowa karta",
+            "ko": "새 탭", "tr": "Yeni sekme"])
+    }
 }
 
