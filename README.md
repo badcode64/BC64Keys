@@ -2,9 +2,11 @@
 
 **A simple, secure keyboard remapper for macOS** — the straightforward alternative to Karabiner Elements.
 
+[![Download Latest](https://img.shields.io/github/v/release/badcode64/BC64Keys?label=Download&color=success)](https://github.com/badcode64/BC64Keys/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
-[![Platform: macOS](https://img.shields.io/badge/Platform-macOS-lightgrey.svg)]()
+[![Platform: macOS 13+](https://img.shields.io/badge/Platform-macOS%2013%2B-lightgrey.svg)]()
 [![Swift 5](https://img.shields.io/badge/Swift-5-orange.svg)]()
+[![Notarized](https://img.shields.io/badge/Apple-Notarized-success)]()
 
 ---
 
@@ -20,9 +22,12 @@ I created BC64Keys because I just wanted to **remap a few keys** — not learn a
 |---------|----------|-------------------|
 | Configuration | Visual GUI, click & press | JSON config files |
 | Learning curve | ⚡ Minutes | 📚 Hours/Days |
-| Codebase size | ~1,500 lines | ~100,000+ lines |
+| Codebase size | ~2,100 lines | ~100,000+ lines |
 | Code auditability | ✅ Easy to review | ❌ Very complex |
 | Setup time | 30 seconds | 10-30 minutes |
+| Universal Binary | ✅ Apple Silicon + Intel | ✅ Yes |
+| Code Signing | ✅ Developer ID | ✅ Yes |
+| Notarized | ✅ Apple Notarized | ✅ Yes |
 
 ### 🔒 Security First
 
@@ -30,12 +35,13 @@ I created BC64Keys because I just wanted to **remap a few keys** — not learn a
 
 This is why BC64Keys is:
 - **100% Open Source** (GPL-3.0)
-- **Single file codebase** (~1,500 lines) — anyone can audit it
+- **Single file design** (~2,100 lines) — anyone can audit it in minutes
 - **No network access** — works completely offline
 - **No data collection** — your keystrokes stay on your Mac
 - **No external dependencies** — pure Swift/SwiftUI
+- **Apple Notarized** — verified and signed by Apple's security team
 
-> Unlike massive, complex tools where security vulnerabilities can hide in thousands of files, BC64Keys is simple enough that **you can read and verify the entire codebase yourself**.
+> Unlike massive, complex tools where security vulnerabilities can hide in thousands of files, BC64Keys is simple enough that **you can read and verify the entire codebase yourself in under an hour**.
 
 ---
 
@@ -44,11 +50,15 @@ This is why BC64Keys is:
 - **🖱️ Visual Key Capture** — Just click and press the key you want to remap
 - **🔄 Simple Key Swaps** — Remap any key to any other key
 - **🎯 Navigation Actions** — Map keys to macOS shortcuts (Home → Cmd+←, etc.)
+- **� Per-App Filtering** — Apply mappings globally, or only in specific apps
 - **🚫 Key Blocking** — Disable annoying keys completely
+- **🔍 Real-time Monitor** — See exactly what keys are being pressed
 - **🚀 Launch at Login** — Optional auto-start when you log in (toggle in Settings)
 - **🌍 Multi-language** — English, Hungarian (easily extensible)
 - **⚡ Instant Apply** — Changes take effect immediately, no restart needed
 - **💾 Auto-save** — Your mappings persist between app restarts
+- **🎨 Native UI** — Clean SwiftUI interface that feels like macOS
+- **🔐 Secure** — Signed with Developer ID and notarized by Apple
 
 ### Perfect for Windows Switchers 🪟→🍎
 
@@ -62,17 +72,32 @@ Coming from Windows? BC64Keys includes pre-configured actions for:
 
 ## Screenshots
 
-<!-- TODO: Add screenshots -->
-*Coming soon*
+### Main Interface - Mapping Tab
+*Create and manage your key mappings with an intuitive visual interface*
+
+### Monitor Tab
+*See exactly what keys are being pressed in real-time*
+
+### Settings
+*Configure language, launch at login, and debug options*
+
+> 📸 **Screenshots coming soon!** If you'd like to contribute, feel free to submit screenshots via a PR.
 
 ---
 
 ## Installation
 
-### Option 1: Download Release (Recommended)
-1. Download the latest `.app` from [Releases](https://github.com/badcode64/BC64Keys/releases)
-2. Move `BC64Keys.app` to your Applications folder
-3. Open it and grant Accessibility permission when prompted
+### Option 1: Download Release (Recommended) ⭐
+
+**Latest version: v1.5.0** ([Download](https://github.com/badcode64/BC64Keys/releases/latest))
+
+1. Download **BC64Keys-v1.5.0.dmg** from [Releases](https://github.com/badcode64/BC64Keys/releases/latest)
+2. Open the DMG file
+3. Drag **BC64Keys.app** to your Applications folder
+4. Launch BC64Keys from Applications
+5. Grant Accessibility permission when prompted
+
+✅ **No right-click workarounds needed** — the app is signed and notarized by Apple!
 
 ### Option 2: Build from Source
 ```bash
@@ -116,21 +141,50 @@ Keyboard remapping on macOS requires intercepting and modifying system-wide key 
 
 Use the **Monitor** tab to see what keys you're pressing — useful for finding key codes and testing your mappings.
 
-Tip: while running, BC64Keys writes status logs to `~/Library/Logs/BC64Keys/bc64keys-status.log`.
+### Per-App Filtering
+
+Want a mapping to work only in specific apps (or exclude certain apps)?
+
+1. When creating/editing a rule, scroll to **App Filter**
+2. Choose:
+   - **All Apps** — Apply everywhere (default)
+   - **Include** — Apply only in selected apps
+   - **Exclude** — Apply everywhere except selected apps
+3. Select apps from the running apps list
+
+### Debug Logging
+
+By default, BC64Keys doesn't write logs to save SSD wear. To enable:
+
+1. Go to **Settings** tab
+2. Enable **Debug Logging**
+3. Logs will be written to `~/Library/Logs/BC64Keys/bc64keys-status.log`
 
 ---
 
 ## Building
 
-Requirements:
+**Requirements:**
 - macOS 13.0+
 - Xcode Command Line Tools (`xcode-select --install`)
 
+**Build:**
 ```bash
 ./build.sh
 ```
 
-The app will be created as `BC64Keys.app` in the project directory.
+The universal binary (ARM64 + Intel) will be created as `BC64Keys.app`.
+
+**Optional: Create DMG installer:**
+```bash
+./create-dmg.sh
+```
+
+**Optional: Notarize with Apple:**
+```bash
+./notarize.sh BC64Keys-v1.5.0.dmg
+```
+(Requires Apple Developer account and credentials)
 
 ---
 
@@ -139,10 +193,73 @@ The app will be created as `BC64Keys.app` in the project directory.
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ### Areas where help is appreciated:
-- Translations (add your language!)
-- UI/UX improvements
-- Bug fixes
-- Documentation
+- 📸 **Screenshots** — Help us create beautiful screenshots for the README
+- 🌍 **Translations** — Add support for your language
+- 🎨 **UI/UX improvements** — Make the interface even better
+- 🐛 **Bug fixes** — Help squash bugs
+- 📚 **Documentation** — Improve guides and examples
+
+### How to Contribute:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## Frequently Asked Questions (FAQ)
+
+<details>
+<summary><b>Is BC64Keys safe to use?</b></summary>
+
+Yes! BC64Keys is:
+- **100% open source** — you can review the entire codebase
+- **Signed with Developer ID** — verified by Apple
+- **Notarized by Apple** — passed Apple's security checks
+- **No network access** — all processing is local
+- **No data collection** — your keystrokes never leave your Mac
+
+The entire codebase is ~2,100 lines and designed for easy security auditing.
+</details>
+
+<details>
+<summary><b>Why does BC64Keys need Accessibility permission?</b></summary>
+
+Keyboard remapping requires intercepting system-wide key events using macOS's `CGEventTap` API. This low-level access is protected by the Accessibility permission system to prevent unauthorized keylogging. BC64Keys uses the same mechanism as macOS's built-in keyboard shortcuts.
+</details>
+
+<details>
+<summary><b>Will my settings be preserved when I update?</b></summary>
+
+Yes! All your key mappings and preferences are stored in macOS UserDefaults, not inside the app bundle. When you update BC64Keys, simply replace the old app with the new one — your settings will remain intact.
+</details>
+
+<details>
+<summary><b>Can I use BC64Keys alongside Karabiner Elements?</b></summary>
+
+Not recommended. Both apps intercept keyboard events at the system level, which can cause conflicts. Choose one and disable the other.
+</details>
+
+<details>
+<summary><b>Does BC64Keys work on Apple Silicon Macs?</b></summary>
+
+Yes! BC64Keys is a universal binary that runs natively on both Apple Silicon (M1/M2/M3) and Intel Macs.
+</details>
+
+<details>
+<summary><b>How do I uninstall BC64Keys?</b></summary>
+
+1. Quit BC64Keys (Cmd+Q)
+2. Disable "Launch at Login" in Settings (optional, but recommended)
+3. Move BC64Keys.app from Applications to Trash
+4. Remove Accessibility permission: System Settings → Privacy & Security → Accessibility → Remove BC64Keys
+
+Your settings will remain in UserDefaults. To completely remove everything:
+```bash
+defaults delete com.bc64.BC64Keys
+```
+</details>
 
 ---
 
@@ -172,7 +289,12 @@ This means:
 
 - Built with SwiftUI and ❤️
 - Inspired by the need for simplicity
+- Thanks to all contributors and supporters!
 
 ---
 
-**Made by [BadCode64](https://github.com/badcode64)** | Hungary 🇭🇺
+## Star History
+
+If BC64Keys helped you, please consider giving it a ⭐ on GitHub!
+
+[![Star History Chart](https://api.star-history.com/svg?repos=badcode64/BC64Keys&type=Date)](https://star-history.com/#badcode64/BC64Keys&Date)
