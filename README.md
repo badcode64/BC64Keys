@@ -2,6 +2,8 @@
 
 **A simple, secure keyboard remapper for macOS** — the straightforward alternative to Karabiner Elements.
 
+**NEW in v1.6.0:** 🌍 Full multi-language support for all 28 navigation actions in 14 languages!
+
 [![Download Latest](https://img.shields.io/github/v/release/badcode64/BC64Keys?label=Download&color=success)](https://github.com/badcode64/BC64Keys/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Platform: macOS 13+](https://img.shields.io/badge/Platform-macOS%2013%2B-lightgrey.svg)]()
@@ -54,7 +56,7 @@ This is why BC64Keys is:
 - **🚫 Key Blocking** — Disable annoying keys completely
 - **🔍 Real-time Monitor** — See exactly what keys are being pressed
 - **🚀 Launch at Login** — Optional auto-start when you log in (toggle in Settings)
-- **🌍 Multi-language** — English, Hungarian (easily extensible)
+- **🌍 Multi-language** — 14 languages: English, Hungarian, German, French, Spanish, Italian, Japanese, Chinese, Dutch, Portuguese, Swedish, Polish, Korean, Turkish
 - **⚡ Instant Apply** — Changes take effect immediately, no restart needed
 - **💾 Auto-save** — Your mappings persist between app restarts
 - **🎨 Native UI** — Clean SwiftUI interface that feels like macOS
@@ -89,9 +91,9 @@ Coming from Windows? BC64Keys includes pre-configured actions for:
 
 ### Option 1: Download Release (Recommended) ⭐
 
-**Latest version: v1.5.0** ([Download](https://github.com/badcode64/BC64Keys/releases/latest))
+**Latest version: v1.6.0** ([Download](https://github.com/badcode64/BC64Keys/releases/latest))
 
-1. Download **BC64Keys-v1.5.0.dmg** from [Releases](https://github.com/badcode64/BC64Keys/releases/latest)
+1. Download **BC64Keys-v1.6.0.dmg** from [Releases](https://github.com/badcode64/BC64Keys/releases/latest)
 2. Open the DMG file
 3. Drag **BC64Keys.app** to your Applications folder
 4. Launch BC64Keys from Applications
@@ -182,7 +184,8 @@ The universal binary (ARM64 + Intel) will be created as `BC64Keys.app`.
 
 **Optional: Notarize with Apple:**
 ```bash
-./notarize.sh BC64Keys-v1.5.0.dmg
+# Set up credentials first (see NOTARIZATION_GUIDE.md)
+./notarize.sh
 ```
 (Requires Apple Developer account and credentials)
 
