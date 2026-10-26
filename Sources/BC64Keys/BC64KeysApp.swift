@@ -11,7 +11,7 @@ import ServiceManagement
 // How it works (high level):
 // - UI lets the user define KeyMappingRule items (source key + optional modifiers → target key/modifiers)
 // - Rules are persisted in UserDefaults via KeyMappingManager (JSON encoded)
-// - A CGEventTap (KeyRemapper) intercepts keyDown/keyUp events and either:
+// - A CGEventTap (KeyRemapper) intercepts keyDown/keyUp/flagsChanged events and either:
 //   - blocks them (discard), or
 //   - emits a replacement CGEvent (remap)
 //
@@ -53,6 +53,66 @@ let kSpecialKeys: [UInt16: String] = [
     59: "⌃ LCtrl", 62: "⌃ RCtrl", 58: "⌥ LOpt", 61: "⌥ ROpt",
     55: "⌘ LCmd", 54: "⌘ RCmd", 63: "fn"
 ]
+
+// MARK: - Physical modifier keys
+// Device-specific masks from IOKit/hidsystem/IOLLEvent.h distinguish each side.
+struct PhysicalModifier {
+    let keyCode: UInt16
+    let flag: CGEventFlags
+    let deviceMask: UInt64
+
+    static let all: [PhysicalModifier] = [
+        .init(keyCode: 56, flag: .maskShift, deviceMask: 0x02),
+        .init(keyCode: 60, flag: .maskShift, deviceMask: 0x04),
+        .init(keyCode: 59, flag: .maskControl, deviceMask: 0x01),
+        .init(keyCode: 62, flag: .maskControl, deviceMask: 0x2000),
+        .init(keyCode: 58, flag: .maskAlternate, deviceMask: 0x20),
+        .init(keyCode: 61, flag: .maskAlternate, deviceMask: 0x40),
+        .init(keyCode: 55, flag: .maskCommand, deviceMask: 0x08),
+        .init(keyCode: 54, flag: .maskCommand, deviceMask: 0x10)
+    ]
+    static let userFlags: CGEventFlags = [.maskShift, .maskControl, .maskAlternate, .maskCommand]
+
+    static func key(_ keyCode: UInt16) -> PhysicalModifier? {
+        all.first { $0.keyCode == keyCode }
+    }
+
+    func isDown(in flags: CGEventFlags) -> Bool {
+        flags.rawValue & deviceMask != 0
+    }
+
+    func removing(from flags: CGEventFlags) -> CGEventFlags {
+        var result = CGEventFlags(rawValue: flags.rawValue & ~deviceMask)
+        if !Self.all.contains(where: { $0.flag == flag && $0.isDown(in: result) }) {
+            result.remove(flag)
+        }
+        return result
+    }
+
+    func adding(to flags: CGEventFlags) -> CGEventFlags {
+        CGEventFlags(rawValue: flags.rawValue | deviceMask | flag.rawValue)
+    }
+}
+
+// Capture the actual physical modifier immediately on press.
+struct KeyCaptureState {
+    struct Selection {
+        let keyCode: UInt16
+        let flags: CGEventFlags
+    }
+
+    func capture(type: CGEventType, keyCode: UInt16, flags: CGEventFlags) -> Selection? {
+        if type == .keyDown {
+            return Selection(keyCode: keyCode, flags: flags.intersection(PhysicalModifier.userFlags))
+        }
+        guard type == .flagsChanged else { return nil }
+        if keyCode == 57 {
+            return Selection(keyCode: keyCode, flags: flags.intersection(PhysicalModifier.userFlags))
+        }
+        guard let modifier = PhysicalModifier.key(keyCode), modifier.isDown(in: flags) else { return nil }
+        return Selection(keyCode: keyCode, flags: modifier.removing(from: flags).intersection(PhysicalModifier.userFlags))
+    }
+}
 
 // MARK: - Main App
 @main
@@ -2183,33 +2243,35 @@ struct AddMappingSheet: View {
     }
     
     private func startKeyCapture() {
-        // Captures the next keyDown event when the user clicks “Source” or “Target”.
-        // Returning nil consumes the event so it does not type into any focused control.
         if let monitor = keyCaptureMonitor {
             NSEvent.removeMonitor(monitor)
             keyCaptureMonitor = nil
         }
-
-        keyCaptureMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if self.isCapturingFrom {
-                let baseKey = self.getKeyName(keyCode: event.keyCode, char: event.charactersIgnoringModifiers ?? "")
-                let mods = self.getModifierString(event.modifierFlags)
-                self.fromKey = mods.isEmpty ? baseKey : "\(mods)\(baseKey)"
-                self.fromKeyCode = event.keyCode
-                self.fromModifiers = self.getCGEventFlags(event.modifierFlags)
-                self.isCapturingFrom = false
-                return nil
-            } else if self.isCapturingTo {
-                self.toKey = self.getKeyName(keyCode: event.keyCode, char: event.charactersIgnoringModifiers ?? "")
-                self.toKeyCode = event.keyCode
-                self.toCharacter = nil  // Physical key press - don't use Unicode character
-                self.isCapturingTo = false
+        keyCaptureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+            guard self.isCapturingFrom || self.isCapturingTo else { return event }
+            let type: CGEventType = event.type == .flagsChanged ? .flagsChanged : .keyDown
+            guard let selection = KeyCaptureState().capture(type: type, keyCode: event.keyCode,
+                                                               flags: CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue))) else {
                 return nil
             }
-            return event
+            let char = event.type == .flagsChanged ? "" : (event.charactersIgnoringModifiers ?? "")
+            if self.isCapturingFrom {
+                let baseKey = self.getKeyName(keyCode: selection.keyCode, char: char)
+                let mods = self.getModifierString(NSEvent.ModifierFlags(rawValue: UInt(selection.flags.rawValue)))
+                self.fromKey = mods.isEmpty ? baseKey : "\(mods)\(baseKey)"
+                self.fromKeyCode = selection.keyCode
+                self.fromModifiers = selection.flags.isEmpty ? nil : selection.flags
+                self.isCapturingFrom = false
+            } else {
+                self.toKey = self.getKeyName(keyCode: selection.keyCode, char: char)
+                self.toKeyCode = selection.keyCode
+                self.toCharacter = nil
+                self.isCapturingTo = false
+            }
+            return nil
         }
     }
-    
+
     private func getKeyName(keyCode: UInt16, char: String) -> String {
         if let name = kSpecialKeys[keyCode] { return name }
         return char.isEmpty ? "(\(keyCode))" : char.uppercased()
@@ -2288,6 +2350,191 @@ struct KeyEventRow: View {
     }
 }
 
+// MARK: - Held mapping state
+// A press owns its mapping until release, independent of later rule/app changes.
+struct RemappingState {
+    static let eventTag: Int64 = 0x424336344B657973
+    private var activeMappings: [UInt16: KeyMappingRule] = [:]
+    private var pressedKeys: Set<UInt16> = []
+    private var capsLockPressed = false
+    private var capsLockMapped = false
+    private var lastFlags: CGEventFlags = []
+
+    mutating func synchronize(flags: CGEventFlags, heldKeys: Set<UInt16>) {
+        lastFlags = flags
+        pressedKeys = heldKeys
+        capsLockPressed = flags.contains(.maskAlphaShift)
+        capsLockMapped = false
+    }
+
+    func effectiveFlags(_ flags: CGEventFlags) -> CGEventFlags {
+        var result = flags
+        for keyCode in activeMappings.keys {
+            if let modifier = PhysicalModifier.key(keyCode) {
+                result = modifier.removing(from: result)
+            }
+        }
+        for mapping in activeMappings.values where !isDiscard(mapping) && (mapping.targetCharacter?.isEmpty ?? true) {
+            if let modifier = PhysicalModifier.key(mapping.targetKeyCode) {
+                result = modifier.adding(to: result)
+            }
+        }
+        return result
+    }
+
+    private func isDiscard(_ mapping: KeyMappingRule) -> Bool {
+        mapping.type == .navigation && mapping.targetKeyCode == 0 &&
+            mapping.targetModifiers == nil && (mapping.targetCharacter?.isEmpty ?? true)
+    }
+
+    private func findMatchingMapping(keyCode: UInt16, eventFlags: CGEventFlags,
+                                     mappings: [KeyMappingRule], bundleID: String) -> KeyMappingRule? {
+        mappings.first { mapping in
+            guard mapping.isEnabled && mapping.sourceKeyCode == keyCode else { return false }
+            switch mapping.appFilterMode {
+            case .all: break
+            case .exclude:
+                if mapping.filteredApps.contains(bundleID) { return false }
+            case .include:
+                if !mapping.filteredApps.contains(bundleID) { return false }
+            }
+            if let required = mapping.sourceModifiers {
+                return eventFlags.intersection(PhysicalModifier.userFlags) == required.intersection(PhysicalModifier.userFlags)
+            }
+            // A standalone physical modifier remains usable while other modifiers are held.
+            return PhysicalModifier.key(keyCode) != nil || eventFlags.intersection(PhysicalModifier.userFlags).isEmpty
+        }
+    }
+
+    private func output(mapping: KeyMappingRule, isKeyDown: Bool, flags: CGEventFlags,
+                        originalEvent: CGEvent? = nil) -> CGEvent? {
+        guard !isDiscard(mapping) else { return nil }
+        if let character = mapping.targetCharacter, !character.isEmpty {
+            guard isKeyDown, let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) else { return nil }
+            var unicode = Array(character.utf16)
+            event.keyboardSetUnicodeString(stringLength: unicode.count, unicodeString: &unicode)
+            event.flags = mapping.sourceModifiers == nil ? flags : []
+            event.setIntegerValueField(.eventSourceUserData, value: Self.eventTag)
+            return event
+        }
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: mapping.targetKeyCode, keyDown: isKeyDown) else { return nil }
+        if PhysicalModifier.key(mapping.targetKeyCode) != nil {
+            event.type = .flagsChanged
+            event.flags = flags
+        } else {
+            event.type = isKeyDown ? .keyDown : .keyUp
+            event.flags = mapping.targetModifiers ?? (mapping.sourceModifiers == nil ? flags : [])
+        }
+        if let originalEvent = originalEvent {
+            event.setIntegerValueField(.keyboardEventAutorepeat, value: originalEvent.getIntegerValueField(.keyboardEventAutorepeat))
+        }
+        event.setIntegerValueField(.eventSourceUserData, value: Self.eventTag)
+        return event
+    }
+
+    mutating func process(type: CGEventType, event: CGEvent, mappings: [KeyMappingRule], bundleID: String, debugLoggingEnabled: Bool = false) -> [CGEvent] {
+        guard event.getIntegerValueField(.eventSourceUserData) != Self.eventTag else { return [event] }
+        let flags = event.flags
+        lastFlags = flags
+        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let modifier = PhysicalModifier.key(keyCode)
+
+        if type == .flagsChanged && keyCode == 57 {
+            let active = flags.contains(.maskAlphaShift)
+            defer { capsLockPressed = active }
+            if active && !capsLockPressed {
+                let matchingFlags = effectiveFlags(flags)
+                if let mapping = findMatchingMapping(keyCode: 57, eventFlags: matchingFlags, mappings: mappings, bundleID: bundleID) {
+                    capsLockMapped = true
+                    activeMappings[57] = mapping
+                    let down = output(mapping: mapping, isKeyDown: true, flags: effectiveFlags(flags))
+                    activeMappings.removeValue(forKey: 57)
+                    let up = output(mapping: mapping, isKeyDown: false, flags: effectiveFlags(flags))
+                    return [down, up].compactMap { $0 }
+                }
+            } else if !active && capsLockPressed && capsLockMapped {
+                capsLockMapped = false
+                return []
+            }
+            event.flags = effectiveFlags(flags)
+            return [event]
+        }
+
+        guard type == .keyDown || type == .keyUp || (type == .flagsChanged && modifier != nil) else {
+            // Mouse/scroll flags must agree with keyboard flags while a modifier is remapped.
+            event.flags = effectiveFlags(flags)
+            return [event]
+        }
+        let isKeyDown = type == .flagsChanged ? modifier!.isDown(in: flags) : type == .keyDown
+        let previousFlags = effectiveFlags(flags)
+        if isKeyDown {
+            let firstPress = pressedKeys.insert(keyCode).inserted
+            if firstPress {
+                let matchingFlags = modifier?.removing(from: previousFlags) ?? previousFlags
+                if let mapping = findMatchingMapping(keyCode: keyCode, eventFlags: matchingFlags, mappings: mappings, bundleID: bundleID) {
+                    activeMappings[keyCode] = mapping
+                    if debugLoggingEnabled {
+                        print("🔀 Remap \(keyCode) → \(mapping.targetKeyCode) [\(bundleID)]")
+                    }
+                }
+            }
+            if let mapping = activeMappings[keyCode] {
+                if let target = PhysicalModifier.key(mapping.targetKeyCode), (mapping.targetCharacter?.isEmpty ?? true) {
+                    // Don't repeat modifier presses or release a target still held by another source.
+                    let beforePress = modifier?.removing(from: previousFlags) ?? previousFlags
+                    if !firstPress || target.isDown(in: beforePress) { return [] }
+                }
+                return [output(mapping: mapping, isKeyDown: true, flags: effectiveFlags(flags), originalEvent: event)].compactMap { $0 }
+            }
+        } else {
+            pressedKeys.remove(keyCode)
+            if let mapping = activeMappings.removeValue(forKey: keyCode) {
+                let outputFlags = effectiveFlags(flags)
+                if let target = PhysicalModifier.key(mapping.targetKeyCode), (mapping.targetCharacter?.isEmpty ?? true),
+                   target.isDown(in: outputFlags) {
+                    return []
+                }
+                return [output(mapping: mapping, isKeyDown: false, flags: outputFlags, originalEvent: event)].compactMap { $0 }
+            }
+        }
+        event.flags = effectiveFlags(flags)
+        return [event]
+    }
+
+    // Balance emitted presses on stop, capture suspension, termination, or a disabled tap.
+    mutating func releaseAll(physicalFlags: CGEventFlags? = nil) -> [CGEvent] {
+        let events = releaseMappings(physicalFlags: physicalFlags)
+        pressedKeys.removeAll()
+        capsLockMapped = false
+        return events
+    }
+
+    private mutating func releaseMappings(physicalFlags: CGEventFlags?) -> [CGEvent] {
+        let flags = physicalFlags ?? lastFlags
+        let keys = activeMappings.keys.sorted()
+        let suppressed = keys.compactMap { PhysicalModifier.key($0) }
+        var events: [CGEvent] = []
+        for keyCode in keys {
+            guard let mapping = activeMappings.removeValue(forKey: keyCode) else { continue }
+            let outputFlags = effectiveFlags(flags)
+            if let target = PhysicalModifier.key(mapping.targetKeyCode), target.isDown(in: outputFlags) { continue }
+            if let event = output(mapping: mapping, isKeyDown: false, flags: outputFlags) {
+                events.append(event)
+            }
+        }
+        // Restore any physical modifiers still held when normal pass-through resumes.
+        for modifier in suppressed where modifier.isDown(in: flags) {
+            if let event = CGEvent(keyboardEventSource: nil, virtualKey: modifier.keyCode, keyDown: true) {
+                event.type = .flagsChanged
+                event.flags = effectiveFlags(flags)
+                event.setIntegerValueField(.eventSourceUserData, value: Self.eventTag)
+                events.append(event)
+            }
+        }
+        return events
+    }
+}
+
 // MARK: - Key Remapper using CGEventTap
 class KeyRemapper {
     private var eventTap: CFMachPort?
@@ -2295,8 +2542,7 @@ class KeyRemapper {
     weak var mappingManager: KeyMappingManager?
     var debugLoggingEnabled: Bool = false
     
-    // Track Caps Lock state to detect press/release
-    private var capsLockPressed: Bool = false
+    private var state = RemappingState()
     
     // Cached frontmost bundle ID. Tap + workspace observer both run on the main
     // run loop, so a plain var is enough — DispatchQueue.sync per keystroke caused lag.
@@ -2320,6 +2566,7 @@ class KeyRemapper {
         
         // Idempotent: drop any previous tap/observer before creating a new one
         stopRemapping()
+        synchronizeState()
         
         // Initialize cached bundle ID
         cachedBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
@@ -2335,11 +2582,22 @@ class KeyRemapper {
             }
         }
         
-        // Create event tap for keyboard events
-        let eventMask = (1 << CGEventType.keyDown.rawValue) | 
+        // Include pointer events so suppressed/held modifiers also apply to clicks and scrolling.
+        let eventMask = (1 << CGEventType.keyDown.rawValue) |
                         (1 << CGEventType.keyUp.rawValue) |
-                        (1 << CGEventType.flagsChanged.rawValue)
-        
+                        (1 << CGEventType.flagsChanged.rawValue) |
+                        (1 << CGEventType.leftMouseDown.rawValue) |
+                        (1 << CGEventType.leftMouseUp.rawValue) |
+                        (1 << CGEventType.rightMouseDown.rawValue) |
+                        (1 << CGEventType.rightMouseUp.rawValue) |
+                        (1 << CGEventType.otherMouseDown.rawValue) |
+                        (1 << CGEventType.otherMouseUp.rawValue) |
+                        (1 << CGEventType.mouseMoved.rawValue) |
+                        (1 << CGEventType.leftMouseDragged.rawValue) |
+                        (1 << CGEventType.rightMouseDragged.rawValue) |
+                        (1 << CGEventType.otherMouseDragged.rawValue) |
+                        (1 << CGEventType.scrollWheel.rawValue)
+
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -2370,6 +2628,9 @@ class KeyRemapper {
     }
     
     func stopRemapping() {
+        for event in state.releaseAll(physicalFlags: CGEventSource.flagsState(.hidSystemState)) {
+            event.post(tap: .cgSessionEventTap)
+        }
         // Remove workspace observer
         if let observer = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
@@ -2387,169 +2648,34 @@ class KeyRemapper {
         }
     }
     
+    private func synchronizeState() {
+        let flags = CGEventSource.flagsState(.hidSystemState)
+        let heldKeys = Set((0...127).compactMap { value -> UInt16? in
+            let key = UInt16(value)
+            return CGEventSource.keyState(.hidSystemState, key: key) ? key : nil
+        })
+        state.synchronize(flags: flags, heldKeys: heldKeys)
+    }
+
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        // Re-enable tap if it was disabled
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            for released in state.releaseAll(physicalFlags: CGEventSource.flagsState(.hidSystemState)) {
+                released.tapPostEvent(proxy)
+            }
+            synchronizeState()
             if let eventTap = eventTap {
                 CGEvent.tapEnable(tap: eventTap, enable: true)
             }
             return Unmanaged.passUnretained(event)
         }
-        
-        // Process key events and flags changed (for Caps Lock and modifiers)
-        guard type == .keyDown || type == .keyUp || type == .flagsChanged else {
-            return Unmanaged.passUnretained(event)
+        let events = state.process(type: type, event: event, mappings: mappingManager?.mappings ?? [], bundleID: cachedBundleID, debugLoggingEnabled: debugLoggingEnabled)
+        guard let last = events.last else { return nil }
+        for extra in events.dropLast() {
+            extra.tapPostEvent(proxy)
         }
-        
-        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-        let eventFlags = event.flags
-        
-        // Special handling for Caps Lock via flagsChanged
-        // Note: flagsChanged is triggered when ANY modifier key state changes (Shift, Cmd, Opt, Ctrl, Caps Lock),
-        // but we only handle Caps Lock here by checking the .maskAlphaShift flag.
-        // Other modifiers (Shift, Cmd, etc.) are handled via eventFlags matching in handleKeyMapping.
-        if type == .flagsChanged {
-            let capsLockActive = eventFlags.contains(.maskAlphaShift)
-            
-            if capsLockActive && !capsLockPressed {
-                capsLockPressed = true
-                if findMatchingMapping(keyCode: 57, eventFlags: eventFlags) != nil {
-                    if let down = handleKeyMapping(keyCode: 57, eventFlags: eventFlags, isKeyDown: true, originalEvent: nil)?.takeRetainedValue() {
-                        down.post(tap: .cghidEventTap)
-                    }
-                    if let up = handleKeyMapping(keyCode: 57, eventFlags: eventFlags, isKeyDown: false, originalEvent: nil)?.takeRetainedValue() {
-                        up.post(tap: .cghidEventTap)
-                    }
-                    return nil
-                }
-                return Unmanaged.passUnretained(event)
-            } else if !capsLockActive && capsLockPressed {
-                capsLockPressed = false
-                if findMatchingMapping(keyCode: 57, eventFlags: eventFlags) != nil {
-                    return nil
-                }
-                return Unmanaged.passUnretained(event)
-            }
-            
-            return Unmanaged.passUnretained(event)
-        }
-        
-        // Handle normal key events
-        if type == .keyDown || type == .keyUp {
-            return handleKeyMapping(keyCode: keyCode, eventFlags: eventFlags, isKeyDown: type == .keyDown, originalEvent: event)
-        }
-        
-        return Unmanaged.passUnretained(event)
+        return last === event ? Unmanaged.passUnretained(event) : Unmanaged.passRetained(last)
     }
-    
-    private func findMatchingMapping(keyCode: UInt16, eventFlags: CGEventFlags) -> KeyMappingRule? {
-        guard let manager = mappingManager else { return nil }
-        let activeBundleID = cachedBundleID
-        
-        // Iterate in place — avoid allocating a filtered copy on every keystroke
-        for mapping in manager.mappings {
-            guard mapping.isEnabled, keyCode == mapping.sourceKeyCode else { continue }
-            
-            let shouldApply: Bool
-            switch mapping.appFilterMode {
-            case .all:
-                shouldApply = true
-            case .exclude:
-                shouldApply = !mapping.filteredApps.contains(activeBundleID)
-            case .include:
-                shouldApply = mapping.filteredApps.contains(activeBundleID)
-            }
-            if !shouldApply { continue }
-            
-            if let requiredMods = mapping.sourceModifiers {
-                let shiftPressed = eventFlags.contains(.maskShift)
-                let cmdPressed = eventFlags.contains(.maskCommand)
-                let optPressed = eventFlags.contains(.maskAlternate)
-                let ctrlPressed = eventFlags.contains(.maskControl)
-                
-                let reqShift = requiredMods.contains(.maskShift)
-                let reqCmd = requiredMods.contains(.maskCommand)
-                let reqOpt = requiredMods.contains(.maskAlternate)
-                let reqCtrl = requiredMods.contains(.maskControl)
-                
-                if shiftPressed != reqShift || cmdPressed != reqCmd || optPressed != reqOpt || ctrlPressed != reqCtrl {
-                    continue
-                }
-            } else {
-                let hasUserModifiers = eventFlags.contains(.maskShift) ||
-                                      eventFlags.contains(.maskCommand) ||
-                                      eventFlags.contains(.maskAlternate) ||
-                                      eventFlags.contains(.maskControl)
-                if hasUserModifiers { continue }
-            }
-            
-            return mapping
-        }
-        return nil
-    }
-    
-    private func passThrough(originalEvent: CGEvent?, keyCode: UInt16, eventFlags: CGEventFlags, isKeyDown: Bool) -> Unmanaged<CGEvent>? {
-        if let originalEvent = originalEvent {
-            return Unmanaged.passUnretained(originalEvent)
-        }
-        guard let passThroughEvent = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: isKeyDown) else {
-            return nil
-        }
-        passThroughEvent.flags = eventFlags
-        return Unmanaged.passRetained(passThroughEvent)
-    }
-    
-    private func handleKeyMapping(keyCode: UInt16, eventFlags: CGEventFlags, isKeyDown: Bool, originalEvent: CGEvent? = nil) -> Unmanaged<CGEvent>? {
-        guard let mapping = findMatchingMapping(keyCode: keyCode, eventFlags: eventFlags) else {
-            return passThrough(originalEvent: originalEvent, keyCode: keyCode, eventFlags: eventFlags, isKeyDown: isKeyDown)
-        }
-        
-        // Log only when a remap actually applies — never on the unmapped hot path
-        if debugLoggingEnabled {
-            print("🔀 Remap \(keyCode) → \(mapping.targetKeyCode) [\(cachedBundleID)]")
-        }
-        
-        if mapping.targetKeyCode == 0 && mapping.targetModifiers == nil &&
-            mapping.type == .navigation && (mapping.targetCharacter?.isEmpty ?? true) {
-            return nil
-        }
-        if let targetChar = mapping.targetCharacter, !targetChar.isEmpty {
-            if isKeyDown {
-                guard let newEvent = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) else {
-                    return passThrough(originalEvent: originalEvent, keyCode: keyCode, eventFlags: eventFlags, isKeyDown: isKeyDown)
-                }
-                var unicodeString = Array(targetChar.utf16)
-                newEvent.keyboardSetUnicodeString(stringLength: unicodeString.count, unicodeString: &unicodeString)
-                if mapping.sourceModifiers != nil {
-                    newEvent.flags = []
-                } else {
-                    newEvent.flags = eventFlags
-                }
-                return Unmanaged.passRetained(newEvent)
-            } else {
-                return nil
-            }
-        }
-        
-        guard let newEvent = CGEvent(
-            keyboardEventSource: nil,
-            virtualKey: CGKeyCode(mapping.targetKeyCode),
-            keyDown: isKeyDown
-        ) else {
-            return passThrough(originalEvent: originalEvent, keyCode: keyCode, eventFlags: eventFlags, isKeyDown: isKeyDown)
-        }
-        
-        if let modifiers = mapping.targetModifiers {
-            newEvent.flags = modifiers
-        } else if mapping.sourceModifiers != nil {
-            newEvent.flags = []
-        } else {
-            newEvent.flags = eventFlags
-        }
-        
-        return Unmanaged.passRetained(newEvent)
-    }
-    
+
     deinit {
         // Ensure cleanup happens even if stopRemapping wasn't explicitly called
         stopRemapping()
